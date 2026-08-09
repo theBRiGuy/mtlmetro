@@ -49,13 +49,12 @@ body{
   overflow:hidden;
   touch-action:pan-x pan-y;
   overscroll-behavior:none;          /* no rubber-band, no pull-to-refresh */
-  padding-top:env(safe-area-inset-top);
 }
 button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 :focus-visible{outline:2px solid var(--tile);outline-offset:2px;border-radius:2px}
 
 /* ---------- shell ---------- */
-.app{display:grid;grid-template-rows:auto 1fr;height:100dvh}
+.app{display:grid;grid-template-rows:auto auto 1fr;height:100dvh;min-height:0}
 
 /* ---------- masthead ---------- */
 .masthead{
@@ -139,24 +138,24 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .lchip[aria-pressed="true"] span{color:var(--text)}
 
 .search{
-  display:flex;align-items:center;gap:7px;margin-left:auto;
+  display:flex;align-items:center;gap:7px;
   border:1px solid var(--rule);border-radius:3px;padding:0 9px;background:var(--ground);
 }
 .search input{
   background:none;border:none;color:var(--text);font:inherit;font-size:13px;
-  padding:6px 0;width:170px;
+  padding:6px 0;width:150px;
 }
 .search input::placeholder{color:var(--dimmer)}
 .search input:focus{outline:none}
 .search svg{width:13px;height:13px;color:var(--dimmer);flex:0 0 auto}
 
 /* ---------- body ---------- */
-.stage{position:relative;display:grid;grid-template-columns:1fr var(--panel-w);min-height:0}
+.stage{position:relative;display:grid;grid-template-columns:1fr var(--panel-w);min-height:0;overflow:hidden}
 .mapwrap{position:relative;overflow:hidden;background:var(--ground);min-height:0}
 #map{width:100%;height:100%;display:block;touch-action:none;cursor:grab}
 #map.dragging{cursor:grabbing}
 
-.zoom{position:absolute;left:14px;bottom:14px;display:flex;flex-direction:column;border:1px solid var(--rule);border-radius:3px;overflow:hidden;background:var(--ink)}
+.zoom{position:absolute;left:14px;top:14px;display:flex;flex-direction:column;border:1px solid var(--rule);border-radius:3px;overflow:hidden;background:var(--ink)}
 .zoom button{width:32px;height:30px;color:var(--dim);font-family:var(--mono);font-size:13px}
 .zoom button + button{border-top:1px solid var(--rule)}
 .zoom button:hover{background:var(--surface-2);color:var(--text)}
@@ -186,7 +185,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .st.dim{opacity:.16}
 .st.dim .stlabel{opacity:0}
 .line-path{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:7}
-.line-path.muted{opacity:.34}
+.line-path.muted{opacity:.46}
 .line-path.dim{opacity:.13}
 .tilegrid{opacity:.028}
 
@@ -315,7 +314,7 @@ body[data-view="list"] .mapwrap{display:none}
 /* ---------- responsive ---------- */
 @media (max-width:900px){
   /* tighter masthead */
-  .masthead{padding:9px 14px;gap:10px}
+  .masthead{padding:calc(9px + env(safe-area-inset-top)) 14px 9px;gap:10px}
   .wordmark b{font-size:15px}
   .wordmark span{font-size:8.5px;margin-top:3px}
   .mark svg{width:22px;height:22px}
@@ -348,7 +347,6 @@ body[data-view="list"] .mapwrap{display:none}
   .mapwrap{position:absolute;inset:0}
   .listview{position:absolute;inset:0;overflow-y:auto;padding-bottom:120px}
   .hint{display:none}
-  .zoom{bottom:auto;top:14px;left:14px}
   .stlabel{font-size:15px}
   .st.ix .stlabel{font-size:16px}
 
@@ -424,7 +422,7 @@ body[data-view="list"] .mapwrap{display:none}
     </div>
 
     <button class="filtersToggle" id="filtersToggle" aria-expanded="false" aria-controls="railMore">
-      Filters <span class="chev">\u25BE</span>
+      Filters <span class="chev">▾</span>
     </button>
 
     <div class="rail-more" id="railMore">
@@ -921,6 +919,20 @@ function touchDist(e){
 }
 
 /* ============================================================
+   PAGE ZOOM LOCK
+   iOS Safari has ignored user-scalable=no since iOS 10, so the viewport meta
+   and touch-action rules don't stop it on their own. These non-standard
+   gesture events are what it does honour. They fire alongside touch events,
+   not instead of them, so blocking Safari's page zoom leaves the map's own
+   pinch handler above completely intact.
+   ============================================================ */
+['gesturestart','gesturechange','gestureend'].forEach(type => {
+  document.addEventListener(type, e => e.preventDefault(), { passive:false });
+});
+
+document.addEventListener('dblclick', e => e.preventDefault(), { passive:false });
+
+/* ============================================================
    PANEL
    ============================================================ */
 const panel = document.getElementById('panel');
@@ -1249,7 +1261,13 @@ setSheet('closed');
   await loadState();
   buildMap();
   // A whole-network fit is unreadable on a phone, so start zoomed into downtown.
-  if(isMobile()) focusOn(600, 470, 620); else fitAll();
+  if(isMobile()){
+    // Match the window height to the map's full height, then let width follow.
+    // On a tall phone that lands ~405 user units across, so labels render near
+    // their design size instead of being scaled down to noise.
+    focusOn(580, BASE_VIEW.y + BASE_VIEW.h / 2,
+            Math.min(BASE_VIEW.w, BASE_VIEW.h / aspect()));
+  } else fitAll();
   renderTally();
   renderPanel();
   renderList();
