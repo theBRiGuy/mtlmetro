@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>mtlmetro — a rating map of the Montréal Métro</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -33,6 +33,12 @@
 
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
+html{
+  /* pan-x pan-y permits scrolling but withholds pinch-zoom and double-tap zoom.
+     'manipulation' would kill double-tap only and leave pinch alive. */
+  touch-action:pan-x pan-y;
+  -webkit-text-size-adjust:100%;
+}
 body{
   background:var(--ground);
   color:var(--text);
@@ -41,6 +47,9 @@ body{
   line-height:1.5;
   -webkit-font-smoothing:antialiased;
   overflow:hidden;
+  touch-action:pan-x pan-y;
+  overscroll-behavior:none;          /* no rubber-band, no pull-to-refresh */
+  padding-top:env(safe-area-inset-top);
 }
 button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 :focus-visible{outline:2px solid var(--tile);outline-offset:2px;border-radius:2px}
@@ -186,7 +195,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
   border-left:1px solid var(--rule);background:var(--ink);
   display:flex;flex-direction:column;min-height:0;
 }
-.panel-scroll{overflow-y:auto;padding:20px;flex:1;min-height:0}
+.panel-scroll{overflow-y:auto;padding:20px;flex:1;min-height:0;touch-action:pan-y;-webkit-overflow-scrolling:touch}
 .p-empty{color:var(--dimmer);font-size:13.5px;padding:4px 0}
 .p-empty b{display:block;font-family:var(--display);font-weight:700;font-stretch:112%;
   text-transform:uppercase;letter-spacing:.1em;font-size:12px;color:var(--dim);margin-bottom:10px}
@@ -284,7 +293,7 @@ textarea::placeholder{color:var(--dimmer)}
 .credit a{color:var(--dim)}
 
 /* ---------- list view ---------- */
-.listview{display:none;overflow-y:auto;padding:6px 0 20px}
+.listview{display:none;overflow-y:auto;padding:6px 0 20px;touch-action:pan-y;-webkit-overflow-scrolling:touch}
 body[data-view="list"] .listview{display:block}
 body[data-view="list"] .mapwrap{display:none}
 .lgroup{padding:16px 18px 4px}
@@ -296,20 +305,94 @@ body[data-view="list"] .mapwrap{display:none}
 .lrow .nm{flex:1;font-size:14px}
 .lrow .sc{font-family:var(--mono);font-size:11.5px;min-width:26px;text-align:right;font-weight:500}
 
+/* ---------- collapsible filter drawer ---------- */
+.filtersToggle{display:none}
+.rail-more{display:contents}          /* desktop: children lay out in the rail directly */
+
+/* ---------- mobile bottom sheet ---------- */
+.sheetHead{display:none}
+
 /* ---------- responsive ---------- */
 @media (max-width:900px){
-  .stage{grid-template-columns:1fr;grid-template-rows:1fr auto}
-  .panel{border-left:none;border-top:1px solid var(--rule);max-height:56dvh}
-  .search{margin-left:0;width:100%;order:5}
-  .search input{width:100%}
-  .tally{margin-left:auto}
-  .stlabel{font-size:13px}
-}
-@media (max-width:560px){
-  .masthead{padding:10px 14px;gap:12px}
-  .rail{padding:8px 14px}
+  /* tighter masthead */
+  .masthead{padding:9px 14px;gap:10px}
   .wordmark b{font-size:15px}
+  .wordmark span{font-size:8.5px;margin-top:3px}
+  .mark svg{width:22px;height:22px}
+  .tally .n{font-size:17px}
+  .tally .of{font-size:9px}
+  .dist{height:11px}
+  .dist b{font-size:8.5px}
+
+  /* rail collapses to two controls; the rest lives in a drawer */
+  .rail{padding:7px 14px;gap:8px}
+  .filtersToggle{
+    display:flex;align-items:center;gap:6px;
+    padding:5px 11px;border:1px solid var(--rule);border-radius:3px;
+    font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);
+  }
+  .filtersToggle .chev{font-size:9px;transition:transform .18s ease}
+  body[data-filters="open"] .filtersToggle{background:var(--surface-2);color:var(--text)}
+  body[data-filters="open"] .filtersToggle .chev{transform:rotate(180deg)}
+  .rail-more{
+    display:none;width:100%;flex-wrap:wrap;align-items:center;gap:8px;
+    padding-top:8px;border-top:1px solid var(--rule-soft);
+  }
+  body[data-filters="open"] .rail-more{display:flex}
+  .search{margin-left:0;width:100%}
+  .search input{width:100%}
+  .railLabel{margin-left:0}
+
+  /* map fills the stage; the panel floats over it */
+  .stage{display:block;position:relative;grid-template-columns:none}
+  .mapwrap{position:absolute;inset:0}
+  .listview{position:absolute;inset:0;overflow-y:auto;padding-bottom:120px}
+  .hint{display:none}
+  .zoom{bottom:auto;top:14px;left:14px}
+  .stlabel{font-size:15px}
+  .st.ix .stlabel{font-size:16px}
+
+  .panel{
+    position:absolute;left:0;right:0;bottom:0;z-index:20;
+    padding-bottom:env(safe-area-inset-bottom);
+    max-height:82dvh;border-left:none;border-top:1px solid var(--rule);
+    border-radius:14px 14px 0 0;box-shadow:0 -14px 36px rgba(0,0,0,.55);
+    transform:translateY(100%);
+    transition:transform .22s cubic-bezier(.32,.72,0,1);
+  }
+  body[data-sheet="peek"] .panel{transform:translateY(calc(100% - 78px))}
+  body[data-sheet="open"] .panel{transform:translateY(0)}
+
+  .sheetHead{
+    display:flex;flex-direction:column;align-items:stretch;gap:9px;
+    padding:9px 18px 12px;width:100%;flex:0 0 auto;
+    border-bottom:1px solid var(--rule-soft);
+  }
+  .grab{width:34px;height:4px;border-radius:99px;background:var(--rule);margin:0 auto;flex:0 0 auto}
+  .sh-row{display:flex;align-items:center;gap:10px;min-width:0}
+  .sh-name{
+    flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-family:var(--display);font-weight:700;font-stretch:112%;font-size:16px;text-align:left;
+  }
+  .sh-score{
+    flex:0 0 auto;font-family:var(--mono);font-size:11px;font-weight:500;
+    padding:2px 8px;border-radius:99px;color:rgba(0,0,0,.75);background:var(--c,var(--rule));
+  }
+  .panel-scroll{padding:18px}
 }
+
+@media (max-width:560px){
+  .masthead{padding:8px 12px}
+  .rail{padding:7px 12px}
+  .panel-scroll{padding:16px}
+  .nav-row{grid-template-columns:1fr 1fr}
+  .nav-btn{padding:12px 10px;font-size:12.5px}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .panel{transition:none}
+}
+
 </style>
 
 <div class="app">
@@ -335,35 +418,41 @@ body[data-view="list"] .mapwrap{display:none}
   </header>
 
   <div class="rail">
-    <div class="seg" role="group" aria-label="Colour the map by">
-      <button id="modeRatings" aria-pressed="true">Ratings</button>
-      <button id="modeLines" aria-pressed="false">Lines</button>
-    </div>
-
     <div class="seg" role="group" aria-label="View">
       <button id="viewMap" aria-pressed="true">Map</button>
       <button id="viewList" aria-pressed="false">List</button>
     </div>
 
-    <div class="seg" role="group" aria-label="Order the list by">
-      <button id="sortLine" aria-pressed="true">By line</button>
-      <button id="sortScore" aria-pressed="false">By score</button>
+    <button class="filtersToggle" id="filtersToggle" aria-expanded="false" aria-controls="railMore">
+      Filters <span class="chev">\u25BE</span>
+    </button>
+
+    <div class="rail-more" id="railMore">
+      <div class="seg" role="group" aria-label="Colour the map by">
+        <button id="modeRatings" aria-pressed="true">Ratings</button>
+        <button id="modeLines" aria-pressed="false">Lines</button>
+      </div>
+
+      <div class="seg" role="group" aria-label="Order the list by">
+        <button id="sortLine" aria-pressed="true">By line</button>
+        <button id="sortScore" aria-pressed="false">By score</button>
+      </div>
+
+      <span class="railLabel">Show lines</span>
+      <div class="lchips" id="lchips"></div>
+
+      <span class="railLabel">Show scores</span>
+      <div class="tchips" id="tchips" role="group" aria-label="Show or hide stations by rating"></div>
+
+      <button class="reset" id="reset" hidden>Show all 68</button>
+
+      <label class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>
+        </svg>
+        <input id="q" type="search" placeholder="Find a station" autocomplete="off" aria-label="Find a station">
+      </label>
     </div>
-
-    <span class="railLabel">Show lines</span>
-    <div class="lchips" id="lchips"></div>
-
-    <span class="railLabel">Show scores</span>
-    <div class="tchips" id="tchips" role="group" aria-label="Show or hide stations by rating"></div>
-
-    <button class="reset" id="reset" hidden>Show all 68</button>
-
-    <label class="search">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>
-      </svg>
-      <input id="q" type="search" placeholder="Find a station" autocomplete="off" aria-label="Find a station">
-    </label>
   </div>
 
   <div class="stage">
@@ -379,7 +468,14 @@ body[data-view="list"] .mapwrap{display:none}
 
     <div class="listview" id="listview"></div>
 
-    <aside class="panel">
+    <aside class="panel" id="sheet">
+      <button class="sheetHead" id="sheetHead" aria-expanded="false">
+        <span class="grab"></span>
+        <span class="sh-row">
+          <span class="sh-name" id="shName">Nothing selected</span>
+          <span class="sh-score" id="shScore"></span>
+        </span>
+      </button>
       <div class="panel-scroll" id="panel"></div>
       <div class="panel-foot">
         <span id="saveState">Notes saved as you go</span>
@@ -611,11 +707,44 @@ const el = (n, attrs = {}) => {
    ============================================================ */
 const map = document.getElementById('map');
 const BASE_VIEW = { x:16, y:14, w:1268, h:728 };
-let view = { ...BASE_VIEW };
+let view = { x:16, y:14, w:1268 };
 
+const isMobile = () => window.matchMedia('(max-width: 900px)').matches;
+
+/* The viewBox height is derived from the container's actual aspect ratio rather
+   than fixed, so the map never letterboxes — on a tall phone you get a tall
+   window onto the map instead of a thin strip floating in dead space. */
+function aspect(){
+  const r = map.getBoundingClientRect();
+  return r.width ? r.height / r.width : BASE_VIEW.h / BASE_VIEW.w;
+}
 function applyView(){
+  view.h = view.w * aspect();
   map.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
 }
+function focusOn(cx, cy, w){
+  view.w = w;
+  view.x = cx - w / 2;
+  view.y = cy - (w * aspect()) / 2;
+  applyView();
+}
+function fitAll(){
+  const a = aspect();
+  focusOn(BASE_VIEW.x + BASE_VIEW.w / 2, BASE_VIEW.y + BASE_VIEW.h / 2,
+          Math.max(BASE_VIEW.w, BASE_VIEW.h / a));
+}
+/* Pan only when the target has drifted off screen, so stepping along a line
+   with the arrows doesn't yank the map on every hop. */
+function ensureVisible(s){
+  const m = Math.min(90, view.w * 0.12);
+  if(s.x < view.x + m || s.x > view.x + view.w - m ||
+     s.y < view.y + m || s.y > view.y + view.h - m){
+    view.x = s.x - view.w / 2;
+    view.y = s.y - view.h / 2;
+    applyView();
+  }
+}
+window.addEventListener('resize', applyView);
 
 function labelPlacement(s){
   const d = 9, dd = 6;
@@ -750,12 +879,11 @@ map.addEventListener('pointerup', endDrag);
 map.addEventListener('pointercancel', endDrag);
 
 function zoomAt(factor, cx, cy){
-  const nw = Math.min(BASE_VIEW.w * 2.2, Math.max(BASE_VIEW.w * 0.16, view.w * factor));
+  const nw = Math.min(BASE_VIEW.w * 2.2, Math.max(BASE_VIEW.w * 0.12, view.w * factor));
   const k = nw / view.w;
   view.x = cx - (cx - view.x) * k;
   view.y = cy - (cy - view.y) * k;
   view.w = nw;
-  view.h = nw * (BASE_VIEW.h / BASE_VIEW.w);
   applyView();
 }
 map.addEventListener('wheel', e => {
@@ -768,7 +896,7 @@ map.addEventListener('wheel', e => {
 
 document.getElementById('zin').onclick  = () => zoomAt(0.8, view.x + view.w/2, view.y + view.h/2);
 document.getElementById('zout').onclick = () => zoomAt(1.25, view.x + view.w/2, view.y + view.h/2);
-document.getElementById('zfit').onclick = () => { view = { ...BASE_VIEW }; applyView(); };
+document.getElementById('zfit').onclick = fitAll;
 
 /* pinch */
 let pinch = null;
@@ -910,6 +1038,9 @@ function select(id, line){
   paintMap();
   renderPanel();
   renderList();
+  renderSheetHead();
+  ensureVisible(s);
+  if(isMobile() && document.body.dataset.sheet === 'closed') setSheet('peek');
 }
 
 /* Left/right arrow keys ride the current line. Ignored while typing a note. */
@@ -1069,12 +1200,56 @@ document.getElementById('exportBtn').onclick = () => {
 };
 
 /* ============================================================
+   MOBILE BOTTOM SHEET
+   The panel is a sibling column on desktop and an overlay on mobile, so it
+   never competes with the map for vertical space.
+   ============================================================ */
+const sheetHead = document.getElementById('sheetHead');
+const shName = document.getElementById('shName');
+const shScore = document.getElementById('shScore');
+
+function setSheet(stateName){
+  document.body.dataset.sheet = stateName;
+  sheetHead.setAttribute('aria-expanded', String(stateName === 'open'));
+}
+function renderSheetHead(){
+  if(!selected){ shName.textContent = 'Nothing selected'; shScore.textContent = ''; return; }
+  const s = BY_ID[selected], r = RATINGS[s.id];
+  shName.textContent = s.name;
+  shScore.textContent = r + '/5';
+  shScore.style.setProperty('--c', TIERS[r].hex);
+}
+sheetHead.onclick = () => setSheet(document.body.dataset.sheet === 'open' ? 'peek' : 'open');
+
+// Tapping empty map closes the sheet back down to a peek.
+map.addEventListener('click', e => {
+  if(!e.target.closest('.st') && isMobile() && document.body.dataset.sheet === 'open'){
+    setSheet('peek');
+  }
+});
+
+/* ============================================================
+   FILTER DRAWER
+   ============================================================ */
+const filtersToggle = document.getElementById('filtersToggle');
+filtersToggle.onclick = () => {
+  const open = document.body.dataset.filters === 'open';
+  document.body.dataset.filters = open ? 'closed' : 'open';
+  filtersToggle.setAttribute('aria-expanded', String(!open));
+  applyView();
+};
+
+/* ============================================================
    BOOT
    ============================================================ */
 document.body.dataset.view = 'map';
+document.body.dataset.filters = 'closed';
+setSheet('closed');
 (async () => {
   await loadState();
   buildMap();
+  // A whole-network fit is unreadable on a phone, so start zoomed into downtown.
+  if(isMobile()) focusOn(600, 470, 620); else fitAll();
   renderTally();
   renderPanel();
   renderList();
