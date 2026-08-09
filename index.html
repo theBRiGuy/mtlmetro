@@ -3,9 +3,9 @@
 <title>mtlmetro — a rating map of the Montréal Métro</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&family=Inter+Tight:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-
 <style>
+/* mtlmetro — styles */
+
 :root{
   --ink:#0A0E11;
   --ground:#11171B;
@@ -83,9 +83,12 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .tally .of{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--dimmer)}
 .tally .of em{font-style:normal}
 
+/* Label and its chips must wrap as one unit — as separate flex children the
+   label gets stranded at the end of the previous row. */
+.chipGroup{display:flex;align-items:center;gap:8px}
 .railLabel{
   font-family:var(--mono);font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;
-  color:var(--dimmer);margin-left:6px;
+  color:var(--dimmer);white-space:nowrap;
 }
 .reset{
   font-family:var(--mono);font-size:10px;letter-spacing:.11em;text-transform:uppercase;
@@ -340,7 +343,10 @@ body[data-view="list"] .mapwrap{display:none}
   body[data-filters="open"] .rail-more{display:flex}
   .search{margin-left:0;width:100%}
   .search input{width:100%}
-  .railLabel{margin-left:0}
+  /* Narrow screens: label always sits above its own row of chips, so the two
+     groups read consistently instead of one wrapping and one not. */
+  .chipGroup{flex-direction:column;align-items:flex-start;gap:6px;width:100%}
+  .lchips,.tchips{flex-wrap:wrap}
 
   /* map fills the stage; the panel floats over it */
   .stage{display:block;position:relative;grid-template-columns:none}
@@ -390,8 +396,9 @@ body[data-view="list"] .mapwrap{display:none}
 @media (prefers-reduced-motion:reduce){
   .panel{transition:none}
 }
-
 </style>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&family=Inter+Tight:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
 
 <div class="app">
   <header class="masthead">
@@ -436,11 +443,15 @@ body[data-view="list"] .mapwrap{display:none}
         <button id="sortScore" aria-pressed="false">By score</button>
       </div>
 
-      <span class="railLabel">Show lines</span>
-      <div class="lchips" id="lchips"></div>
+      <div class="chipGroup">
+        <span class="railLabel" id="lchipsLabel">Show lines</span>
+        <div class="lchips" id="lchips" role="group" aria-labelledby="lchipsLabel"></div>
+      </div>
 
-      <span class="railLabel">Show scores</span>
-      <div class="tchips" id="tchips" role="group" aria-label="Show or hide stations by rating"></div>
+      <div class="chipGroup">
+        <span class="railLabel" id="tchipsLabel">Show scores</span>
+        <div class="tchips" id="tchips" role="group" aria-labelledby="tchipsLabel"></div>
+      </div>
 
       <button class="reset" id="reset" hidden>Show all 68</button>
 
@@ -490,521 +501,521 @@ body[data-view="list"] .mapwrap{display:none}
 </div>
 
 <script>
-/* ============================================================
-   DATA
-   Station list, running order, and URL slugs transcribed from
-   metrodemontreal.com's own station index. Boroughs likewise.
-   Opening years are the segment openings — see the README note.
-   ============================================================ */
-
-const LINES = {
-  g:{num:'1', name:'Verte',  en:'Green',  hex:'#16B25A', term:'Angrignon ↔ Honoré-Beaugrand'},
-  o:{num:'2', name:'Orange', en:'Orange', hex:'#F5871F', term:'Côte-Vertu ↔ Montmorency'},
-  y:{num:'4', name:'Jaune',  en:'Yellow', hex:'#F0C41C', term:'Berri-UQAM ↔ Longueuil'},
-  b:{num:'5', name:'Bleue',  en:'Blue',   hex:'#3592E8', term:'Snowdon ↔ Saint-Michel'}
-};
-
-const PATHS = {
-  g:[[56,640],[308,640],[358,590],[408,540],[954,540],[1164,330]],
-  o:[[174,154],[258,238],[258,490],[358,590],[610,590],[660,540],[660,46]],
-  y:[[660,540],[744,624]],
-  b:[[258,406],[310,354],[576,354],[618,312],[660,312],[702,270],[786,270]]
-};
-
-// id | name | x | y | lines | borough | opened | site path | label position
-const RAW = [
-  ['angrignon','Angrignon',56,640,'g','Le Sud-Ouest',1978,'green/angrignon','dr'],
-  ['monk','Monk',98,640,'g','Le Sud-Ouest',1978,'green/monk','dr'],
-  ['jolicoeur','Jolicoeur',140,640,'g','Le Sud-Ouest',1978,'green/jolicoeur','dr'],
-  ['verdun','Verdun',182,640,'g','Verdun',1978,'green/verdun','dr'],
-  ['deleglise',"De l'Église",224,640,'g','Verdun',1978,'green/deleglise','dr'],
-  ['lasalle','LaSalle',266,640,'g','Verdun',1978,'green/lasalle','dr'],
-  ['charlevoix','Charlevoix',308,640,'g','Le Sud-Ouest',1978,'green/charlevoix','dr'],
-  ['lionelgroulx','Lionel-Groulx',358,590,'g,o','Le Sud-Ouest',1978,'orange/lionelgroulx','l'],
-  ['atwater','Atwater',408,540,'g','Ville-Marie',1966,'green/atwater','ul'],
-  ['guy','Guy-Concordia',450,540,'g','Ville-Marie',1966,'green/guy','ul'],
-  ['peel','Peel',492,540,'g','Ville-Marie',1966,'green/peel','ul'],
-  ['mcgill','McGill',534,540,'g','Ville-Marie',1966,'green/mcgill','ul'],
-  ['placedesarts','Place-des-Arts',576,540,'g','Ville-Marie',1966,'green/placedesarts','ul'],
-  ['stlaurent','Saint-Laurent',618,540,'g','Ville-Marie',1966,'green/stlaurent','ul'],
-  ['berri','Berri-UQAM',660,540,'g,o,y','Ville-Marie',1966,'orange/berri','ur'],
-  ['beaudry','Beaudry',702,540,'g','Ville-Marie',1966,'green/beaudry','ur'],
-  ['papineau','Papineau',744,540,'g','Ville-Marie',1966,'green/papineau','ur'],
-  ['frontenac','Frontenac',786,540,'g','Ville-Marie',1966,'green/frontenac','ur'],
-  ['prefontaine','Préfontaine',828,540,'g','Mercier–Hochelaga-Maisonneuve',1976,'green/prefontaine','ur'],
-  ['joliette','Joliette',870,540,'g','Mercier–Hochelaga-Maisonneuve',1976,'green/joliette','ur'],
-  ['pieix','Pie-IX',912,540,'g','Mercier–Hochelaga-Maisonneuve',1976,'green/pieix','ur'],
-  ['viau','Viau',954,540,'g','Mercier–Hochelaga-Maisonneuve',1976,'green/viau','dr'],
-  ['assomption','Assomption',996,498,'g','Mercier–Hochelaga-Maisonneuve',1976,'green/assomption','dr'],
-  ['cadillac','Cadillac',1038,456,'g','Mercier–Hochelaga-Maisonneuve',1976,'green/cadillac','dr'],
-  ['langelier','Langelier',1080,414,'g','Mercier–Hochelaga-Maisonneuve',1976,'green/langelier','dr'],
-  ['radisson','Radisson',1122,372,'g','Mercier–Hochelaga-Maisonneuve',1976,'green/radisson','dr'],
-  ['honorebeaugrand','Honoré-Beaugrand',1164,330,'g','Mercier–Hochelaga-Maisonneuve',1976,'green/honorebeaugrand','dr'],
-
-  ['cotevertu','Côte-Vertu',174,154,'o','Saint-Laurent',1986,'orange/cotevertu','l'],
-  ['ducollege','Du Collège',216,196,'o','Saint-Laurent',1986,'orange/ducollege','l'],
-  ['delasavane','De la Savane',258,238,'o','Côte-des-Neiges–NDG',1984,'orange/delasavane','l'],
-  ['namur','Namur',258,280,'o','Côte-des-Neiges–NDG',1984,'orange/namur','l'],
-  ['plamondon','Plamondon',258,322,'o','Côte-des-Neiges–NDG',1982,'orange/plamondon','l'],
-  ['cotestecatherine','Côte-Sainte-Catherine',258,364,'o','Côte-des-Neiges–NDG',1982,'orange/cotestecatherine','l'],
-  ['snowdon','Snowdon',258,406,'o,b','Côte-des-Neiges–NDG',1981,'orange/snowdon','l'],
-  ['villamaria','Villa-Maria',258,448,'o','Côte-des-Neiges–NDG',1981,'orange/villamaria','l'],
-  ['vendome','Vendôme',258,490,'o','Côte-des-Neiges–NDG',1981,'orange/vendome','l'],
-  ['placesthenri','Place-Saint-Henri',308,540,'o','Le Sud-Ouest',1980,'orange/placesthenri','l'],
-  ['georgesvanier','Georges-Vanier',400,590,'o','Le Sud-Ouest',1980,'orange/georgesvanier','dr'],
-  ['lucienlallier',"Lucien-L'Allier",442,590,'o','Ville-Marie',1980,'orange/lucienlallier','dr'],
-  ['bonaventure','Bonaventure',484,590,'o','Ville-Marie',1967,'orange/bonaventure','dr'],
-  ['squarevictoria','Square-Victoria–OACI',526,590,'o','Ville-Marie',1967,'orange/squarevictoria','dr'],
-  ['placedarmes',"Place-d'Armes",568,590,'o','Ville-Marie',1966,'orange/placedarmes','dr'],
-  ['champdemars','Champ-de-Mars',610,590,'o','Ville-Marie',1966,'orange/champdemars','dr'],
-  ['sherbrooke','Sherbrooke',660,502,'o','Le Plateau-Mont-Royal',1966,'orange/sherbrooke','ur'],
-  ['montroyal','Mont-Royal',660,464,'o','Le Plateau-Mont-Royal',1966,'orange/montroyal','l'],
-  ['laurier','Laurier',660,426,'o','Le Plateau-Mont-Royal',1966,'orange/laurier','l'],
-  ['rosemont','Rosemont',660,388,'o','Rosemont–La Petite-Patrie',1966,'orange/rosemont','l'],
-  ['beaubien','Beaubien',660,350,'o','Rosemont–La Petite-Patrie',1966,'orange/beaubien','r'],
-  ['jeantalon','Jean-Talon',660,312,'o,b','Rosemont–La Petite-Patrie',1966,'orange/jeantalon','r'],
-  ['jarry','Jarry',660,274,'o','Villeray–Saint-Michel–Parc-Extension',1966,'orange/jarry','l'],
-  ['cremazie','Crémazie',660,236,'o','Ahuntsic-Cartierville',1966,'orange/cremazie','l'],
-  ['sauve','Sauvé',660,198,'o','Ahuntsic-Cartierville',1966,'orange/sauve','l'],
-  ['henribourassa','Henri-Bourassa',660,160,'o','Ahuntsic-Cartierville',1966,'orange/henribourassa','l'],
-  ['cartier','Cartier',660,122,'o','Laval',2007,'orange/cartier','l'],
-  ['delaconcorde','De la Concorde',660,84,'o','Laval',2007,'orange/delaconcorde','l'],
-  ['montmorency','Montmorency',660,46,'o','Laval',2007,'orange/montmorency','l'],
-
-  ['jeandrapeau','Jean-Drapeau',702,582,'y','Ville-Marie',1967,'yellow/jeandrapeau','r'],
-  ['longueuil','Longueuil–Université-de-Sherbrooke',744,624,'y','Longueuil',1967,'yellow/longueuil','r'],
-
-  ['cotedesneiges','Côte-des-Neiges',366,354,'b','Côte-des-Neiges–NDG',1986,'blue/cotedesneiges','ur'],
-  ['udemontreal','Université-de-Montréal',408,354,'b','Côte-des-Neiges–NDG',1986,'blue/udemontreal','dr'],
-  ['edouardmontpetit','Édouard-Montpetit',450,354,'b','Outremont',1986,'blue/edouardmontpetit','ur'],
-  ['outremont','Outremont',492,354,'b','Outremont',1986,'blue/outremont','dr'],
-  ['acadie','Acadie',534,354,'b','Villeray–Saint-Michel–Parc-Extension',1988,'blue/acadie','ur'],
-  ['parc','Parc',576,354,'b','Villeray–Saint-Michel–Parc-Extension',1986,'blue/parc','dr'],
-  ['decastelnau','De Castelnau',618,312,'b','Villeray–Saint-Michel–Parc-Extension',1986,'blue/decastelnau','ul'],
-  ['fabre','Fabre',702,270,'b','Rosemont–La Petite-Patrie',1986,'blue/fabre','ur'],
-  ['diberville',"D'Iberville",744,270,'b','Villeray–Saint-Michel–Parc-Extension',1986,'blue/diberville','ur'],
-  ['stmichel','Saint-Michel',786,270,'b','Villeray–Saint-Michel–Parc-Extension',1986,'blue/stmichel','ur']
-];
-
-const STATIONS = RAW.map(r => ({
-  id:r[0], name:r[1], x:r[2], y:r[3], lines:r[4].split(','),
-  borough:r[5], opened:r[6], path:r[7], lp:r[8]
-}));
-const BY_ID = Object.fromEntries(STATIONS.map(s => [s.id, s]));
-
-// running order per line (for the list view and line ordering)
-const ORDER = {
-  g:['angrignon','monk','jolicoeur','verdun','deleglise','lasalle','charlevoix','lionelgroulx','atwater','guy','peel','mcgill','placedesarts','stlaurent','berri','beaudry','papineau','frontenac','prefontaine','joliette','pieix','viau','assomption','cadillac','langelier','radisson','honorebeaugrand'],
-  o:['cotevertu','ducollege','delasavane','namur','plamondon','cotestecatherine','snowdon','villamaria','vendome','placesthenri','lionelgroulx','georgesvanier','lucienlallier','bonaventure','squarevictoria','placedarmes','champdemars','berri','sherbrooke','montroyal','laurier','rosemont','beaubien','jeantalon','jarry','cremazie','sauve','henribourassa','cartier','delaconcorde','montmorency'],
-  y:['berri','jeandrapeau','longueuil'],
-  b:['snowdon','cotedesneiges','udemontreal','edouardmontpetit','outremont','acadie','parc','decastelnau','jeantalon','fabre','diberville','stmichel']
-};
-
-/* Matt's ratings, 1–5, transcribed from metrodemontreal.com/rating.html.
-   His judgement, not mine — the station pages carry his reasoning and photos. */
-const RATINGS = {};
-[[5,'acadie angrignon delaconcorde georgesvanier lasalle lionelgroulx monk placesthenri radisson'],
- [4,'bonaventure champdemars decastelnau delasavane ducollege edouardmontpetit fabre jolicoeur langelier mcgill namur outremont parc peel placedesarts prefontaine stmichel squarevictoria udemontreal vendome'],
- [3,'assomption beaudry berri beaubien cadillac cartier charlevoix cotedesneiges cotestecatherine cotevertu cremazie henribourassa honorebeaugrand jeantalon lucienlallier montmorency montroyal pieix plamondon rosemont sherbrooke snowdon verdun viau villamaria'],
- [2,'atwater diberville jarry jeandrapeau laurier papineau placedarmes stlaurent'],
- [1,'deleglise frontenac guy joliette longueuil sauve']
-].forEach(([v, ids]) => ids.split(' ').forEach(id => { RATINGS[id] = v; }));
-
-/* Tier names are Matt's five-point scale; the one-line glosses are my own
-   paraphrase of it. His full wording is on the ratings page. */
-const TIERS = {
-  5:{ name:'Five métros',  gloss:'Top of the network — worth a trip for the architecture alone.', hex:'#34C56C' },
-  4:{ name:'Four métros',  gloss:'Excellent — a genuinely handsome station to move through.',     hex:'#A9C64A' },
-  3:{ name:'Three métros', gloss:'Decent — sensibly laid out and pleasant enough.',                hex:'#EFC53E' },
-  2:{ name:'Two métros',   gloss:'Unremarkable — functional, and not much more.',                  hex:'#EE8B3B' },
-  1:{ name:'One métro',    gloss:'Poor — dull or awkward, and it shows.',                          hex:'#DF5140' }
-};
-
-/* ============================================================
-   STORAGE
-   ============================================================ */
-const KEY = 'mtlmetro:v1';
-let state = { notes:{} };
-let persistent = false;
-let backend = null;              // 'claude' | 'local' | null
-
-/* Storage adapter.
-   Inside Claude, window.storage exists. Once this is deployed to a real URL
-   that API is gone, so we fall back to localStorage — which works on the open
-   web but is blocked in Claude artifacts. Trying both keeps one file portable. */
-const Store = {
-  async get(){
-    if(window.storage && typeof window.storage.get === 'function'){
-      backend = 'claude';
-      const r = await window.storage.get(KEY, false);
-      return (r && r.value) ? r.value : null;
-    }
-    if(typeof localStorage !== 'undefined'){
-      backend = 'local';
-      return localStorage.getItem(KEY);
-    }
-    return null;
-  },
-  async set(value){
-    if(backend === 'claude') return window.storage.set(KEY, value, false);
-    if(backend === 'local')  return localStorage.setItem(KEY, value);
-    throw new Error('no storage backend');
+(() => {
+  // js/data.js
+  var LINES = {
+    g: { num: "1", name: "Verte", en: "Green", hex: "#16B25A", term: "Angrignon \u2194 Honor\xE9-Beaugrand" },
+    o: { num: "2", name: "Orange", en: "Orange", hex: "#F5871F", term: "C\xF4te-Vertu \u2194 Montmorency" },
+    y: { num: "4", name: "Jaune", en: "Yellow", hex: "#F0C41C", term: "Berri-UQAM \u2194 Longueuil" },
+    b: { num: "5", name: "Bleue", en: "Blue", hex: "#3592E8", term: "Snowdon \u2194 Saint-Michel" }
+  };
+  var PATHS = {
+    g: [[56, 640], [308, 640], [358, 590], [408, 540], [954, 540], [1164, 330]],
+    o: [[174, 154], [258, 238], [258, 490], [358, 590], [610, 590], [660, 540], [660, 46]],
+    y: [[660, 540], [744, 624]],
+    b: [[258, 406], [310, 354], [576, 354], [618, 312], [660, 312], [702, 270], [786, 270]]
+  };
+  var RAW = [
+    ["angrignon", "Angrignon", 56, 640, "g", "Le Sud-Ouest", 1978, "green/angrignon", "dr"],
+    ["monk", "Monk", 98, 640, "g", "Le Sud-Ouest", 1978, "green/monk", "dr"],
+    ["jolicoeur", "Jolicoeur", 140, 640, "g", "Le Sud-Ouest", 1978, "green/jolicoeur", "dr"],
+    ["verdun", "Verdun", 182, 640, "g", "Verdun", 1978, "green/verdun", "dr"],
+    ["deleglise", "De l'\xC9glise", 224, 640, "g", "Verdun", 1978, "green/deleglise", "dr"],
+    ["lasalle", "LaSalle", 266, 640, "g", "Verdun", 1978, "green/lasalle", "dr"],
+    ["charlevoix", "Charlevoix", 308, 640, "g", "Le Sud-Ouest", 1978, "green/charlevoix", "dr"],
+    ["lionelgroulx", "Lionel-Groulx", 358, 590, "g,o", "Le Sud-Ouest", 1978, "orange/lionelgroulx", "l"],
+    ["atwater", "Atwater", 408, 540, "g", "Ville-Marie", 1966, "green/atwater", "ul"],
+    ["guy", "Guy-Concordia", 450, 540, "g", "Ville-Marie", 1966, "green/guy", "ul"],
+    ["peel", "Peel", 492, 540, "g", "Ville-Marie", 1966, "green/peel", "ul"],
+    ["mcgill", "McGill", 534, 540, "g", "Ville-Marie", 1966, "green/mcgill", "ul"],
+    ["placedesarts", "Place-des-Arts", 576, 540, "g", "Ville-Marie", 1966, "green/placedesarts", "ul"],
+    ["stlaurent", "Saint-Laurent", 618, 540, "g", "Ville-Marie", 1966, "green/stlaurent", "ul"],
+    ["berri", "Berri-UQAM", 660, 540, "g,o,y", "Ville-Marie", 1966, "orange/berri", "ur"],
+    ["beaudry", "Beaudry", 702, 540, "g", "Ville-Marie", 1966, "green/beaudry", "ur"],
+    ["papineau", "Papineau", 744, 540, "g", "Ville-Marie", 1966, "green/papineau", "ur"],
+    ["frontenac", "Frontenac", 786, 540, "g", "Ville-Marie", 1966, "green/frontenac", "ur"],
+    ["prefontaine", "Pr\xE9fontaine", 828, 540, "g", "Mercier\u2013Hochelaga-Maisonneuve", 1976, "green/prefontaine", "ur"],
+    ["joliette", "Joliette", 870, 540, "g", "Mercier\u2013Hochelaga-Maisonneuve", 1976, "green/joliette", "ur"],
+    ["pieix", "Pie-IX", 912, 540, "g", "Mercier\u2013Hochelaga-Maisonneuve", 1976, "green/pieix", "ur"],
+    ["viau", "Viau", 954, 540, "g", "Mercier\u2013Hochelaga-Maisonneuve", 1976, "green/viau", "dr"],
+    ["assomption", "Assomption", 996, 498, "g", "Mercier\u2013Hochelaga-Maisonneuve", 1976, "green/assomption", "dr"],
+    ["cadillac", "Cadillac", 1038, 456, "g", "Mercier\u2013Hochelaga-Maisonneuve", 1976, "green/cadillac", "dr"],
+    ["langelier", "Langelier", 1080, 414, "g", "Mercier\u2013Hochelaga-Maisonneuve", 1976, "green/langelier", "dr"],
+    ["radisson", "Radisson", 1122, 372, "g", "Mercier\u2013Hochelaga-Maisonneuve", 1976, "green/radisson", "dr"],
+    ["honorebeaugrand", "Honor\xE9-Beaugrand", 1164, 330, "g", "Mercier\u2013Hochelaga-Maisonneuve", 1976, "green/honorebeaugrand", "dr"],
+    ["cotevertu", "C\xF4te-Vertu", 174, 154, "o", "Saint-Laurent", 1986, "orange/cotevertu", "l"],
+    ["ducollege", "Du Coll\xE8ge", 216, 196, "o", "Saint-Laurent", 1986, "orange/ducollege", "l"],
+    ["delasavane", "De la Savane", 258, 238, "o", "C\xF4te-des-Neiges\u2013NDG", 1984, "orange/delasavane", "l"],
+    ["namur", "Namur", 258, 280, "o", "C\xF4te-des-Neiges\u2013NDG", 1984, "orange/namur", "l"],
+    ["plamondon", "Plamondon", 258, 322, "o", "C\xF4te-des-Neiges\u2013NDG", 1982, "orange/plamondon", "l"],
+    ["cotestecatherine", "C\xF4te-Sainte-Catherine", 258, 364, "o", "C\xF4te-des-Neiges\u2013NDG", 1982, "orange/cotestecatherine", "l"],
+    ["snowdon", "Snowdon", 258, 406, "o,b", "C\xF4te-des-Neiges\u2013NDG", 1981, "orange/snowdon", "l"],
+    ["villamaria", "Villa-Maria", 258, 448, "o", "C\xF4te-des-Neiges\u2013NDG", 1981, "orange/villamaria", "l"],
+    ["vendome", "Vend\xF4me", 258, 490, "o", "C\xF4te-des-Neiges\u2013NDG", 1981, "orange/vendome", "l"],
+    ["placesthenri", "Place-Saint-Henri", 308, 540, "o", "Le Sud-Ouest", 1980, "orange/placesthenri", "l"],
+    ["georgesvanier", "Georges-Vanier", 400, 590, "o", "Le Sud-Ouest", 1980, "orange/georgesvanier", "dr"],
+    ["lucienlallier", "Lucien-L'Allier", 442, 590, "o", "Ville-Marie", 1980, "orange/lucienlallier", "dr"],
+    ["bonaventure", "Bonaventure", 484, 590, "o", "Ville-Marie", 1967, "orange/bonaventure", "dr"],
+    ["squarevictoria", "Square-Victoria\u2013OACI", 526, 590, "o", "Ville-Marie", 1967, "orange/squarevictoria", "dr"],
+    ["placedarmes", "Place-d'Armes", 568, 590, "o", "Ville-Marie", 1966, "orange/placedarmes", "dr"],
+    ["champdemars", "Champ-de-Mars", 610, 590, "o", "Ville-Marie", 1966, "orange/champdemars", "dr"],
+    ["sherbrooke", "Sherbrooke", 660, 502, "o", "Le Plateau-Mont-Royal", 1966, "orange/sherbrooke", "ur"],
+    ["montroyal", "Mont-Royal", 660, 464, "o", "Le Plateau-Mont-Royal", 1966, "orange/montroyal", "l"],
+    ["laurier", "Laurier", 660, 426, "o", "Le Plateau-Mont-Royal", 1966, "orange/laurier", "l"],
+    ["rosemont", "Rosemont", 660, 388, "o", "Rosemont\u2013La Petite-Patrie", 1966, "orange/rosemont", "l"],
+    ["beaubien", "Beaubien", 660, 350, "o", "Rosemont\u2013La Petite-Patrie", 1966, "orange/beaubien", "r"],
+    ["jeantalon", "Jean-Talon", 660, 312, "o,b", "Rosemont\u2013La Petite-Patrie", 1966, "orange/jeantalon", "r"],
+    ["jarry", "Jarry", 660, 274, "o", "Villeray\u2013Saint-Michel\u2013Parc-Extension", 1966, "orange/jarry", "l"],
+    ["cremazie", "Cr\xE9mazie", 660, 236, "o", "Ahuntsic-Cartierville", 1966, "orange/cremazie", "l"],
+    ["sauve", "Sauv\xE9", 660, 198, "o", "Ahuntsic-Cartierville", 1966, "orange/sauve", "l"],
+    ["henribourassa", "Henri-Bourassa", 660, 160, "o", "Ahuntsic-Cartierville", 1966, "orange/henribourassa", "l"],
+    ["cartier", "Cartier", 660, 122, "o", "Laval", 2007, "orange/cartier", "l"],
+    ["delaconcorde", "De la Concorde", 660, 84, "o", "Laval", 2007, "orange/delaconcorde", "l"],
+    ["montmorency", "Montmorency", 660, 46, "o", "Laval", 2007, "orange/montmorency", "l"],
+    ["jeandrapeau", "Jean-Drapeau", 702, 582, "y", "Ville-Marie", 1967, "yellow/jeandrapeau", "r"],
+    ["longueuil", "Longueuil\u2013Universit\xE9-de-Sherbrooke", 744, 624, "y", "Longueuil", 1967, "yellow/longueuil", "r"],
+    ["cotedesneiges", "C\xF4te-des-Neiges", 366, 354, "b", "C\xF4te-des-Neiges\u2013NDG", 1986, "blue/cotedesneiges", "ur"],
+    ["udemontreal", "Universit\xE9-de-Montr\xE9al", 408, 354, "b", "C\xF4te-des-Neiges\u2013NDG", 1986, "blue/udemontreal", "dr"],
+    ["edouardmontpetit", "\xC9douard-Montpetit", 450, 354, "b", "Outremont", 1986, "blue/edouardmontpetit", "ur"],
+    ["outremont", "Outremont", 492, 354, "b", "Outremont", 1986, "blue/outremont", "dr"],
+    ["acadie", "Acadie", 534, 354, "b", "Villeray\u2013Saint-Michel\u2013Parc-Extension", 1988, "blue/acadie", "ur"],
+    ["parc", "Parc", 576, 354, "b", "Villeray\u2013Saint-Michel\u2013Parc-Extension", 1986, "blue/parc", "dr"],
+    ["decastelnau", "De Castelnau", 618, 312, "b", "Villeray\u2013Saint-Michel\u2013Parc-Extension", 1986, "blue/decastelnau", "ul"],
+    ["fabre", "Fabre", 702, 270, "b", "Rosemont\u2013La Petite-Patrie", 1986, "blue/fabre", "ur"],
+    ["diberville", "D'Iberville", 744, 270, "b", "Villeray\u2013Saint-Michel\u2013Parc-Extension", 1986, "blue/diberville", "ur"],
+    ["stmichel", "Saint-Michel", 786, 270, "b", "Villeray\u2013Saint-Michel\u2013Parc-Extension", 1986, "blue/stmichel", "ur"]
+  ];
+  var STATIONS = RAW.map((r) => ({
+    id: r[0],
+    name: r[1],
+    x: r[2],
+    y: r[3],
+    lines: r[4].split(","),
+    borough: r[5],
+    opened: r[6],
+    path: r[7],
+    lp: r[8]
+  }));
+  var BY_ID = Object.fromEntries(STATIONS.map((s) => [s.id, s]));
+  var ORDER = {
+    g: ["angrignon", "monk", "jolicoeur", "verdun", "deleglise", "lasalle", "charlevoix", "lionelgroulx", "atwater", "guy", "peel", "mcgill", "placedesarts", "stlaurent", "berri", "beaudry", "papineau", "frontenac", "prefontaine", "joliette", "pieix", "viau", "assomption", "cadillac", "langelier", "radisson", "honorebeaugrand"],
+    o: ["cotevertu", "ducollege", "delasavane", "namur", "plamondon", "cotestecatherine", "snowdon", "villamaria", "vendome", "placesthenri", "lionelgroulx", "georgesvanier", "lucienlallier", "bonaventure", "squarevictoria", "placedarmes", "champdemars", "berri", "sherbrooke", "montroyal", "laurier", "rosemont", "beaubien", "jeantalon", "jarry", "cremazie", "sauve", "henribourassa", "cartier", "delaconcorde", "montmorency"],
+    y: ["berri", "jeandrapeau", "longueuil"],
+    b: ["snowdon", "cotedesneiges", "udemontreal", "edouardmontpetit", "outremont", "acadie", "parc", "decastelnau", "jeantalon", "fabre", "diberville", "stmichel"]
+  };
+  var RATINGS = {};
+  [
+    [5, "acadie angrignon delaconcorde georgesvanier lasalle lionelgroulx monk placesthenri radisson"],
+    [4, "bonaventure champdemars decastelnau delasavane ducollege edouardmontpetit fabre jolicoeur langelier mcgill namur outremont parc peel placedesarts prefontaine stmichel squarevictoria udemontreal vendome"],
+    [3, "assomption beaudry berri beaubien cadillac cartier charlevoix cotedesneiges cotestecatherine cotevertu cremazie henribourassa honorebeaugrand jeantalon lucienlallier montmorency montroyal pieix plamondon rosemont sherbrooke snowdon verdun viau villamaria"],
+    [2, "atwater diberville jarry jeandrapeau laurier papineau placedarmes stlaurent"],
+    [1, "deleglise frontenac guy joliette longueuil sauve"]
+  ].forEach(([v, ids]) => ids.split(" ").forEach((id) => {
+    RATINGS[id] = v;
+  }));
+  var TIERS = {
+    5: { name: "Five m\xE9tros", gloss: "Top of the network \u2014 worth a trip for the architecture alone.", hex: "#34C56C" },
+    4: { name: "Four m\xE9tros", gloss: "Excellent \u2014 a genuinely handsome station to move through.", hex: "#A9C64A" },
+    3: { name: "Three m\xE9tros", gloss: "Decent \u2014 sensibly laid out and pleasant enough.", hex: "#EFC53E" },
+    2: { name: "Two m\xE9tros", gloss: "Unremarkable \u2014 functional, and not much more.", hex: "#EE8B3B" },
+    1: { name: "One m\xE9tro", gloss: "Poor \u2014 dull or awkward, and it shows.", hex: "#DF5140" }
+  };
+  function neighbours(id, line) {
+    const arr = ORDER[line];
+    const i = arr.indexOf(id);
+    return { prev: i > 0 ? arr[i - 1] : null, next: i < arr.length - 1 ? arr[i + 1] : null };
   }
-};
 
-function reportStorage(){
-  document.getElementById('saveState').textContent =
-    persistent ? 'Notes saved as you go' : 'Notes: this session only';
-}
-
-async function loadState(){
-  try{
-    const raw = await Store.get();
-    if(raw) state.notes = JSON.parse(raw).notes || {};
-  }catch(e){
-    // A missing key on first run is normal, not a failure — the backend was
-    // still detected above, so writes should still work.
+  // js/dom.js
+  var SVG_NS = "http://www.w3.org/2000/svg";
+  var el = (n, attrs = {}) => {
+    const e = document.createElementNS(SVG_NS, n);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  };
+  function escapeHtml(str) {
+    return String(str).replace(
+      /[&<>"']/g,
+      (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
+    );
   }
-  persistent = backend !== null;
-  reportStorage();
-}
+  var norm = (str) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/['\u2019\u00b4\u2013\u2014-]/g, " ");
+  var isMobile = () => window.matchMedia("(max-width: 900px)").matches;
 
-let saveTimer = null;
-function save(){
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
-    if(!persistent) return;
-    try{
-      await Store.set(JSON.stringify(state));
-    }catch(e){
-      persistent = false;
-      reportStorage();
+  // js/state.js
+  var state = {
+    mode: "ratings",
+    // 'lines' | 'ratings'
+    active: { g: true, o: true, y: true, b: true },
+    // line filter
+    tiers: { 1: true, 2: true, 3: true, 4: true, 5: true },
+    // score filter
+    sortBy: "line",
+    // list ordering
+    query: "",
+    selected: null,
+    navLine: null,
+    // line the arrows follow
+    notes: {}
+    // persisted via store.js
+  };
+  function visible(s) {
+    if (!s.lines.some((l) => state.active[l])) return false;
+    if (!state.tiers[RATINGS[s.id]]) return false;
+    if (state.query && !norm(s.name).includes(state.query)) return false;
+    return true;
+  }
+
+  // js/store.js
+  var KEY = "mtlmetro:v1";
+  var persistent = false;
+  var backend = null;
+  var Store = {
+    async get() {
+      if (window.storage && typeof window.storage.get === "function") {
+        backend = "claude";
+        const r = await window.storage.get(KEY, false);
+        return r && r.value ? r.value : null;
+      }
+      if (typeof localStorage !== "undefined") {
+        backend = "local";
+        return localStorage.getItem(KEY);
+      }
+      return null;
+    },
+    async set(value) {
+      if (backend === "claude") return window.storage.set(KEY, value, false);
+      if (backend === "local") return localStorage.setItem(KEY, value);
+      throw new Error("no storage backend");
     }
-  }, 350);
-}
+  };
+  function report() {
+    const n = document.getElementById("saveState");
+    if (n) n.textContent = persistent ? "Notes saved as you go" : "Notes: this session only";
+  }
+  async function loadNotes() {
+    try {
+      const raw = await Store.get();
+      if (raw) state.notes = JSON.parse(raw).notes || {};
+    } catch (e) {
+    }
+    persistent = backend !== null;
+    report();
+  }
+  var timer = null;
+  function saveNotes() {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      if (!persistent) return;
+      try {
+        await Store.set(JSON.stringify({ notes: state.notes }));
+      } catch (e) {
+        persistent = false;
+        report();
+      }
+    }, 350);
+  }
 
-/* ============================================================
-   UI STATE
-   ============================================================ */
-let mode = 'ratings';          // 'lines' | 'ratings'
-let active = { g:true, o:true, y:true, b:true };
-let tiers = { 1:true, 2:true, 3:true, 4:true, 5:true };
-let selected = null;
-let navLine = null;            // which line the prev/next arrows follow
-let query = '';
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
-const el = (n, attrs = {}) => {
-  const e = document.createElementNS(SVG_NS, n);
-  for(const k in attrs) e.setAttribute(k, attrs[k]);
-  return e;
-};
-
-/* ============================================================
-   MAP
-   ============================================================ */
-const map = document.getElementById('map');
-const BASE_VIEW = { x:16, y:14, w:1268, h:728 };
-let view = { x:16, y:14, w:1268 };
-
-const isMobile = () => window.matchMedia('(max-width: 900px)').matches;
-
-/* The viewBox height is derived from the container's actual aspect ratio rather
-   than fixed, so the map never letterboxes — on a tall phone you get a tall
-   window onto the map instead of a thin strip floating in dead space. */
-function aspect(){
-  const r = map.getBoundingClientRect();
-  return r.width ? r.height / r.width : BASE_VIEW.h / BASE_VIEW.w;
-}
-function applyView(){
-  view.h = view.w * aspect();
-  map.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
-}
-function focusOn(cx, cy, w){
-  view.w = w;
-  view.x = cx - w / 2;
-  view.y = cy - (w * aspect()) / 2;
-  applyView();
-}
-function fitAll(){
-  const a = aspect();
-  focusOn(BASE_VIEW.x + BASE_VIEW.w / 2, BASE_VIEW.y + BASE_VIEW.h / 2,
-          Math.max(BASE_VIEW.w, BASE_VIEW.h / a));
-}
-/* Pan only when the target has drifted off screen, so stepping along a line
-   with the arrows doesn't yank the map on every hop. */
-function ensureVisible(s){
-  const m = Math.min(90, view.w * 0.12);
-  if(s.x < view.x + m || s.x > view.x + view.w - m ||
-     s.y < view.y + m || s.y > view.y + view.h - m){
-    view.x = s.x - view.w / 2;
-    view.y = s.y - view.h / 2;
+  // js/map.js
+  var onSelect = () => {
+  };
+  function initMap(handlers) {
+    onSelect = handlers.onSelect;
+  }
+  var map = document.getElementById("map");
+  var BASE_VIEW = { x: 16, y: 14, w: 1268, h: 728 };
+  var view = { x: 16, y: 14, w: 1268 };
+  function aspect() {
+    const r = map.getBoundingClientRect();
+    return r.width ? r.height / r.width : BASE_VIEW.h / BASE_VIEW.w;
+  }
+  function applyView() {
+    view.h = view.w * aspect();
+    map.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
+  }
+  function focusOn(cx, cy, w) {
+    view.w = w;
+    view.x = cx - w / 2;
+    view.y = cy - w * aspect() / 2;
     applyView();
   }
-}
-window.addEventListener('resize', applyView);
-
-function labelPlacement(s){
-  const d = 9, dd = 6;
-  switch(s.lp){
-    case 'r':  return { x:s.x + d,  y:s.y + 4, anchor:'start', rot:0 };
-    case 'l':  return { x:s.x - d,  y:s.y + 4, anchor:'end',   rot:0 };
-    case 'ur': return { x:s.x + dd, y:s.y - dd, anchor:'start', rot:-45 };
-    case 'ul': return { x:s.x - dd, y:s.y - dd, anchor:'end',   rot:45 };
-    case 'dr': return { x:s.x + dd, y:s.y + dd, anchor:'start', rot:45 };
-    default:   return { x:s.x - dd, y:s.y + dd, anchor:'end',   rot:-45 };
+  function fitAll() {
+    const a = aspect();
+    focusOn(
+      BASE_VIEW.x + BASE_VIEW.w / 2,
+      BASE_VIEW.y + BASE_VIEW.h / 2,
+      Math.max(BASE_VIEW.w, BASE_VIEW.h / a)
+    );
   }
-}
-
-function buildMap(){
-  map.textContent = '';
-  applyView();
-
-  // faint ceramic-tile grid — the material the whole network is clad in
-  const defs = el('defs');
-  const pat = el('pattern', { id:'tile', width:'34', height:'34', patternUnits:'userSpaceOnUse' });
-  pat.appendChild(el('rect', { width:'34', height:'34', fill:'none', stroke:'#F0E9DB', 'stroke-width':'1' }));
-  defs.appendChild(pat);
-  map.appendChild(defs);
-  map.appendChild(el('rect', {
-    x:BASE_VIEW.x - 200, y:BASE_VIEW.y - 200, width:BASE_VIEW.w + 400, height:BASE_VIEW.h + 400,
-    fill:'url(#tile)', class:'tilegrid'
-  }));
-
-  const gLines = el('g', { id:'lines' });
-  for(const k in PATHS){
-    gLines.appendChild(el('polyline', {
-      points: PATHS[k].map(p => p.join(',')).join(' '),
-      stroke: LINES[k].hex,
-      class:'line-path',
-      'data-line':k
+  function ensureVisible(s) {
+    const m = Math.min(90, view.w * 0.12);
+    if (s.x < view.x + m || s.x > view.x + view.w - m || s.y < view.y + m || s.y > view.y + view.h - m) {
+      view.x = s.x - view.w / 2;
+      view.y = s.y - view.h / 2;
+      applyView();
+    }
+  }
+  window.addEventListener("resize", applyView);
+  function labelPlacement(s) {
+    const d = 9, dd = 6;
+    switch (s.lp) {
+      case "r":
+        return { x: s.x + d, y: s.y + 4, anchor: "start", rot: 0 };
+      case "l":
+        return { x: s.x - d, y: s.y + 4, anchor: "end", rot: 0 };
+      case "ur":
+        return { x: s.x + dd, y: s.y - dd, anchor: "start", rot: -45 };
+      case "ul":
+        return { x: s.x - dd, y: s.y - dd, anchor: "end", rot: 45 };
+      case "dr":
+        return { x: s.x + dd, y: s.y + dd, anchor: "start", rot: 45 };
+      default:
+        return { x: s.x - dd, y: s.y + dd, anchor: "end", rot: -45 };
+    }
+  }
+  function buildMap() {
+    map.textContent = "";
+    applyView();
+    const defs = el("defs");
+    const pat = el("pattern", { id: "tile", width: "34", height: "34", patternUnits: "userSpaceOnUse" });
+    pat.appendChild(el("rect", { width: "34", height: "34", fill: "none", stroke: "#F0E9DB", "stroke-width": "1" }));
+    defs.appendChild(pat);
+    map.appendChild(defs);
+    map.appendChild(el("rect", {
+      x: BASE_VIEW.x - 200,
+      y: BASE_VIEW.y - 200,
+      width: BASE_VIEW.w + 400,
+      height: BASE_VIEW.h + 400,
+      fill: "url(#tile)",
+      class: "tilegrid"
     }));
-  }
-  map.appendChild(gLines);
-
-  const gSt = el('g', { id:'stations' });
-  STATIONS.forEach(s => {
-    const g = el('g', {
-      class:'st' + (s.lines.length > 1 ? ' ix' : ''),
-      'data-id':s.id, tabindex:'0', role:'button',
-      'aria-label':`${s.name}, ${s.lines.map(l => LINES[l].en + ' line').join(' and ')}`
-    });
-    g.appendChild(el('circle', { class:'halo', cx:s.x, cy:s.y, r:15 }));
-    g.appendChild(el('circle', { class:'dot', cx:s.x, cy:s.y, r:5 }));
-
-    const lp = labelPlacement(s);
-    const t = el('text', {
-      class:'stlabel', x:lp.x, y:lp.y, 'text-anchor':lp.anchor,
-      transform: lp.rot ? `rotate(${lp.rot} ${lp.x} ${lp.y})` : ''
-    });
-    t.textContent = s.name === 'Longueuil–Université-de-Sherbrooke' ? 'Longueuil–U-de-Sherbrooke' : s.name;
-    g.appendChild(t);
-
-    g.addEventListener('click', () => select(s.id));
-    g.addEventListener('keydown', e => {
-      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); select(s.id); }
-    });
-    gSt.appendChild(g);
-  });
-  map.appendChild(gSt);
-  paintMap();
-}
-
-function visible(s){
-  if(!s.lines.some(l => active[l])) return false;
-  if(!tiers[RATINGS[s.id]]) return false;
-  if(query && !norm(s.name).includes(query)) return false;
-  return true;
-}
-const norm = str => str.toLowerCase()
-  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-  .replace(/[''´–—-]/g, ' ');
-
-function paintMap(){
-  map.querySelectorAll('.line-path').forEach(p => {
-    p.classList.toggle('dim', !active[p.dataset.line]);
-    p.classList.toggle('muted', mode === 'ratings' && active[p.dataset.line]);
-  });
-
-  map.querySelectorAll('.st').forEach(g => {
-    const s = BY_ID[g.dataset.id];
-    const dot = g.querySelector('.dot');
-    const shown = visible(s) || selected === s.id;
-    g.classList.toggle('dim', !shown);
-    g.classList.toggle('sel', selected === s.id);
-
-    const r = RATINGS[s.id];
-
-    if(mode === 'ratings'){
-      dot.setAttribute('r', 3.4 + r * 1.35);
-      dot.setAttribute('fill', TIERS[r].hex);
-      dot.setAttribute('fill-opacity', 1);
-      dot.setAttribute('stroke', 'var(--ground)');
-      dot.setAttribute('stroke-width', 1.6);
-    }else{
-      const ix = s.lines.length > 1;
-      dot.setAttribute('r', ix ? 7 : 5);
-      dot.setAttribute('fill', ix ? 'var(--ground)' : LINES[s.lines[0]].hex);
-      dot.setAttribute('fill-opacity', 1);
-      dot.setAttribute('stroke', ix ? 'var(--tile)' : 'var(--ground)');
-      dot.setAttribute('stroke-width', ix ? 2.6 : 1.6);
+    const gLines = el("g", { id: "lines" });
+    for (const k in PATHS) {
+      gLines.appendChild(el("polyline", {
+        points: PATHS[k].map((p) => p.join(",")).join(" "),
+        stroke: LINES[k].hex,
+        class: "line-path",
+        "data-line": k
+      }));
     }
-    if(selected === s.id){
-      dot.setAttribute('stroke', 'var(--tile)');
-      dot.setAttribute('stroke-width', 3);
-    }
-  });
-}
-
-/* pan + zoom */
-let drag = null;
-map.addEventListener('pointerdown', e => {
-  if(e.target.closest('.st')) return;
-  drag = { px:e.clientX, py:e.clientY, vx:view.x, vy:view.y };
-  map.setPointerCapture(e.pointerId);
-  map.classList.add('dragging');
-});
-map.addEventListener('pointermove', e => {
-  if(!drag) return;
-  const rect = map.getBoundingClientRect();
-  const scale = view.w / rect.width;
-  view.x = drag.vx - (e.clientX - drag.px) * scale;
-  view.y = drag.vy - (e.clientY - drag.py) * scale;
-  applyView();
-});
-const endDrag = () => { drag = null; map.classList.remove('dragging'); };
-map.addEventListener('pointerup', endDrag);
-map.addEventListener('pointercancel', endDrag);
-
-function zoomAt(factor, cx, cy){
-  const nw = Math.min(BASE_VIEW.w * 2.2, Math.max(BASE_VIEW.w * 0.12, view.w * factor));
-  const k = nw / view.w;
-  view.x = cx - (cx - view.x) * k;
-  view.y = cy - (cy - view.y) * k;
-  view.w = nw;
-  applyView();
-}
-map.addEventListener('wheel', e => {
-  e.preventDefault();
-  const rect = map.getBoundingClientRect();
-  const cx = view.x + ((e.clientX - rect.left) / rect.width) * view.w;
-  const cy = view.y + ((e.clientY - rect.top) / rect.height) * view.h;
-  zoomAt(e.deltaY > 0 ? 1.14 : 0.88, cx, cy);
-}, { passive:false });
-
-document.getElementById('zin').onclick  = () => zoomAt(0.8, view.x + view.w/2, view.y + view.h/2);
-document.getElementById('zout').onclick = () => zoomAt(1.25, view.x + view.w/2, view.y + view.h/2);
-document.getElementById('zfit').onclick = fitAll;
-
-/* pinch */
-let pinch = null;
-map.addEventListener('touchstart', e => {
-  if(e.touches.length === 2){
-    pinch = { d: touchDist(e), w: view.w };
+    map.appendChild(gLines);
+    const gSt = el("g", { id: "stations" });
+    STATIONS.forEach((s) => {
+      const g = el("g", {
+        class: "st" + (s.lines.length > 1 ? " ix" : ""),
+        "data-id": s.id,
+        tabindex: "0",
+        role: "button",
+        "aria-label": `${s.name}, ${s.lines.map((l) => LINES[l].en + " line").join(" and ")}`
+      });
+      g.appendChild(el("circle", { class: "halo", cx: s.x, cy: s.y, r: 15 }));
+      g.appendChild(el("circle", { class: "dot", cx: s.x, cy: s.y, r: 5 }));
+      const lp = labelPlacement(s);
+      const t = el("text", {
+        class: "stlabel",
+        x: lp.x,
+        y: lp.y,
+        "text-anchor": lp.anchor,
+        transform: lp.rot ? `rotate(${lp.rot} ${lp.x} ${lp.y})` : ""
+      });
+      t.textContent = s.name === "Longueuil\u2013Universit\xE9-de-Sherbrooke" ? "Longueuil\u2013U-de-Sherbrooke" : s.name;
+      g.appendChild(t);
+      g.addEventListener("click", () => onSelect(s.id));
+      g.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(s.id);
+        }
+      });
+      gSt.appendChild(g);
+    });
+    map.appendChild(gSt);
+    paintMap();
   }
-}, { passive:true });
-map.addEventListener('touchmove', e => {
-  if(pinch && e.touches.length === 2){
+  function paintMap() {
+    map.querySelectorAll(".line-path").forEach((p) => {
+      p.classList.toggle("dim", !state.active[p.dataset.line]);
+      p.classList.toggle("muted", state.mode === "ratings" && state.active[p.dataset.line]);
+    });
+    map.querySelectorAll(".st").forEach((g) => {
+      const s = BY_ID[g.dataset.id];
+      const dot = g.querySelector(".dot");
+      const shown = visible(s) || state.selected === s.id;
+      g.classList.toggle("dim", !shown);
+      g.classList.toggle("sel", state.selected === s.id);
+      const r = RATINGS[s.id];
+      if (state.mode === "ratings") {
+        dot.setAttribute("r", 3.4 + r * 1.35);
+        dot.setAttribute("fill", TIERS[r].hex);
+        dot.setAttribute("fill-opacity", 1);
+        dot.setAttribute("stroke", "var(--ground)");
+        dot.setAttribute("stroke-width", 1.6);
+      } else {
+        const ix = s.lines.length > 1;
+        dot.setAttribute("r", ix ? 7 : 5);
+        dot.setAttribute("fill", ix ? "var(--ground)" : LINES[s.lines[0]].hex);
+        dot.setAttribute("fill-opacity", 1);
+        dot.setAttribute("stroke", ix ? "var(--tile)" : "var(--ground)");
+        dot.setAttribute("stroke-width", ix ? 2.6 : 1.6);
+      }
+      if (state.selected === s.id) {
+        dot.setAttribute("stroke", "var(--tile)");
+        dot.setAttribute("stroke-width", 3);
+      }
+    });
+  }
+  var drag = null;
+  var pinch = null;
+  map.addEventListener("pointerdown", (e) => {
+    if (e.target.closest(".st") || pinch) return;
+    drag = { px: e.clientX, py: e.clientY, vx: view.x, vy: view.y };
+    map.setPointerCapture(e.pointerId);
+    map.classList.add("dragging");
+  });
+  map.addEventListener("pointermove", (e) => {
+    if (!drag || pinch) return;
+    const rect = map.getBoundingClientRect();
+    const scale = view.w / rect.width;
+    view.x = drag.vx - (e.clientX - drag.px) * scale;
+    view.y = drag.vy - (e.clientY - drag.py) * scale;
+    applyView();
+  });
+  var endDrag = () => {
+    drag = null;
+    map.classList.remove("dragging");
+  };
+  map.addEventListener("pointerup", endDrag);
+  map.addEventListener("pointercancel", endDrag);
+  var clampW = (w) => Math.min(BASE_VIEW.w * 2.2, Math.max(BASE_VIEW.w * 0.12, w));
+  function zoomTo(newWidth, cx, cy) {
+    const nw = clampW(newWidth);
+    const k = nw / view.w;
+    view.x = cx - (cx - view.x) * k;
+    view.y = cy - (cy - view.y) * k;
+    view.w = nw;
+    applyView();
+  }
+  function zoomAt(factor, cx, cy) {
+    zoomTo(view.w * factor, cx, cy);
+  }
+  function toUser(clientX, clientY) {
+    const r = map.getBoundingClientRect();
+    return {
+      x: view.x + (clientX - r.left) / r.width * view.w,
+      y: view.y + (clientY - r.top) / r.height * view.h
+    };
+  }
+  map.addEventListener("wheel", (e) => {
     e.preventDefault();
-    const k = pinch.d / touchDist(e);
-    const cx = view.x + view.w/2, cy = view.y + view.h/2;
-    const target = pinch.w * k;
-    zoomAt(target / view.w, cx, cy);
+    const u = toUser(e.clientX, e.clientY);
+    zoomAt(e.deltaY > 0 ? 1.14 : 0.88, u.x, u.y);
+  }, { passive: false });
+  document.getElementById("zin").onclick = () => zoomAt(0.8, view.x + view.w / 2, view.y + view.h / 2);
+  document.getElementById("zout").onclick = () => zoomAt(1.25, view.x + view.w / 2, view.y + view.h / 2);
+  document.getElementById("zfit").onclick = fitAll;
+  var midpoint = (e) => ({
+    x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+    y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+  });
+  map.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 2) {
+      drag = null;
+      map.classList.remove("dragging");
+      pinch = { d: touchDist(e), w: view.w };
+    }
+  }, { passive: true });
+  map.addEventListener("touchmove", (e) => {
+    if (!pinch || e.touches.length !== 2) return;
+    e.preventDefault();
+    const m = midpoint(e);
+    const u = toUser(m.x, m.y);
+    zoomTo(pinch.w * (pinch.d / touchDist(e)), u.x, u.y);
+  }, { passive: false });
+  var endPinch = (e) => {
+    if (!e.touches || e.touches.length < 2) pinch = null;
+  };
+  map.addEventListener("touchend", endPinch, { passive: true });
+  map.addEventListener("touchcancel", endPinch, { passive: true });
+  function touchDist(e) {
+    const [a, b] = e.touches;
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
   }
-}, { passive:false });
-map.addEventListener('touchend', () => { pinch = null; }, { passive:true });
-function touchDist(e){
-  const [a,b] = e.touches;
-  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-}
+  ["gesturestart", "gesturechange", "gestureend"].forEach((type) => {
+    document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+  });
+  document.addEventListener("dblclick", (e) => e.preventDefault(), { passive: false });
+  function initialView() {
+    if (isMobile()) {
+      focusOn(
+        580,
+        BASE_VIEW.y + BASE_VIEW.h / 2,
+        Math.min(BASE_VIEW.w, BASE_VIEW.h / aspect())
+      );
+    } else {
+      fitAll();
+    }
+  }
 
-/* ============================================================
-   PAGE ZOOM LOCK
-   iOS Safari has ignored user-scalable=no since iOS 10, so the viewport meta
-   and touch-action rules don't stop it on their own. These non-standard
-   gesture events are what it does honour. They fire alongside touch events,
-   not instead of them, so blocking Safari's page zoom leaves the map's own
-   pinch handler above completely intact.
-   ============================================================ */
-['gesturestart','gesturechange','gestureend'].forEach(type => {
-  document.addEventListener(type, e => e.preventDefault(), { passive:false });
-});
-
-document.addEventListener('dblclick', e => e.preventDefault(), { passive:false });
-
-/* ============================================================
-   PANEL
-   ============================================================ */
-const panel = document.getElementById('panel');
-
-const PIP_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true">
+  // js/panel.js
+  var onSelect2 = () => {
+  };
+  function initPanel(handlers) {
+    onSelect2 = handlers.onSelect;
+    sheetHead.onclick = () => setSheet(document.body.dataset.sheet === "open" ? "peek" : "open");
+  }
+  var panel = document.getElementById("panel");
+  var PIP_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true">
   <circle cx="12" cy="12" r="10.2" fill="none" stroke="currentColor" stroke-width="1.7"/>
   <path d="M12 5.4v6.8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
   <path d="M7.2 11.4 12 18l4.8-6.6z" fill="currentColor"/>
 </svg>`;
-
-/* Neighbours along a given line. ORDER holds each line in running order,
-   so prev/next is just a step either side of the station's index. */
-function neighbours(id, line){
-  const arr = ORDER[line];
-  const i = arr.indexOf(id);
-  return { prev: i > 0 ? arr[i - 1] : null, next: i < arr.length - 1 ? arr[i + 1] : null };
-}
-
-function navBtn(id, line, dir){
-  const arrow = dir === 'prev' ? '\u2190' : '\u2192';
-  if(!id){
-    const term = `<span class="nav-term">End of line</span>`;
-    return `<button class="nav-btn ${dir}" disabled>${
-      dir === 'prev' ? `<span class="ar">${arrow}</span>${term}` : `${term}<span class="ar">${arrow}</span>`
-    }</button>`;
+  function navBtn(id, line, dir) {
+    const arrow = dir === "prev" ? "\u2190" : "\u2192";
+    if (!id) {
+      const term = `<span class="nav-term">End of line</span>`;
+      return `<button class="nav-btn ${dir}" disabled>${dir === "prev" ? `<span class="ar">${arrow}</span>${term}` : `${term}<span class="ar">${arrow}</span>`}</button>`;
+    }
+    const n = escapeHtml(BY_ID[id].name);
+    const nm = `<span class="nm2">${n}</span>`;
+    return `<button class="nav-btn ${dir}" data-go="${id}" data-line="${line}" title="${n}">${dir === "prev" ? `<span class="ar">${arrow}</span>${nm}` : `${nm}<span class="ar">${arrow}</span>`}</button>`;
   }
-  const n = escapeHtml(BY_ID[id].name);
-  const nm = `<span class="nm2">${n}</span>`;
-  return `<button class="nav-btn ${dir}" data-go="${id}" data-line="${line}" title="${n}">${
-    dir === 'prev' ? `<span class="ar">${arrow}</span>${nm}` : `${nm}<span class="ar">${arrow}</span>`
-  }</button>`;
-}
-
-function renderPanel(){
-  if(!selected){
-    panel.innerHTML = `<div class="p-empty">
-      <b>Nothing selected</b>
+  function renderPanel() {
+    if (!state.selected) {
+      panel.innerHTML = `<div class="p-empty">
+      <b>Nothing state.selected</b>
       Pick a station to see how Matt rated it, then ride the line with the arrows.
       At an interchange you get a set of arrows per line, so you can change trains.
     </div>`;
-    return;
-  }
-  const s = BY_ID[selected];
-  const r = RATINGS[s.id];
-  const note = state.notes[s.id] || '';
-
-  const nav = s.lines.map(l => {
-    const { prev, next } = neighbours(s.id, l);
-    return `<div class="nav-line${l === navLine ? ' active' : ''}" style="--c:${LINES[l].hex}">
+      return;
+    }
+    const s = BY_ID[state.selected];
+    const r = RATINGS[s.id];
+    const note = state.notes[s.id] || "";
+    const nav = s.lines.map((l) => {
+      const { prev, next } = neighbours(s.id, l);
+      return `<div class="nav-line${l === state.navLine ? " state.active" : ""}" style="--c:${LINES[l].hex}">
       <div class="nav-head"><b>${LINES[l].num}</b> Ligne ${LINES[l].name}</div>
-      <div class="nav-row">${navBtn(prev, l, 'prev')}${navBtn(next, l, 'next')}</div>
+      <div class="nav-row">${navBtn(prev, l, "prev")}${navBtn(next, l, "next")}</div>
     </div>`;
-  }).join('');
-
-  panel.innerHTML = `
-    <div class="p-eyebrow">${s.lines.length > 1 ? 'Interchange · ' : ''}${escapeHtml(s.borough)}</div>
+    }).join("");
+    panel.innerHTML = `
+    <div class="p-eyebrow">${s.lines.length > 1 ? "Interchange \xB7 " : ""}${escapeHtml(s.borough)}</div>
     <h2 class="p-name">${escapeHtml(s.name)}</h2>
 
     <div class="score" style="--c:${TIERS[r].hex}">
       <div class="pips">
-        ${[1,2,3,4,5].map(i => `<span class="pip" data-on="${i <= r ? 1 : 0}">${PIP_SVG}</span>`).join('')}
+        ${[1, 2, 3, 4, 5].map((i) => `<span class="pip" data-on="${i <= r ? 1 : 0}">${PIP_SVG}</span>`).join("")}
       </div>
       <div class="score-name">${TIERS[r].name}</div>
       <div class="score-gloss">${TIERS[r].gloss}</div>
-      <div class="score-by">Rated by Matt · metrodemontreal.com</div>
+      <div class="score-by">Rated by Matt \xB7 metrodemontreal.com</div>
     </div>
 
     <div class="nav">${nav}</div>
 
     <dl class="facts">
       <div class="fact"><dt>Opened</dt><dd>${s.opened}</dd></div>
-      <div class="fact"><dt>Lines</dt><dd>${s.lines.map(l => LINES[l].en).join(' · ')}</dd></div>
+      <div class="fact"><dt>Lines</dt><dd>${s.lines.map((l) => LINES[l].en).join(" \xB7 ")}</dd></div>
     </dl>
 
     <a class="readlink" href="https://www.metrodemontreal.com/${s.path}/archmain.html" target="_blank" rel="noopener">
@@ -1020,257 +1031,256 @@ function renderPanel(){
     <div class="p-h" style="margin-top:24px">Your notes</div>
     <textarea id="note" placeholder="Been here? What did you make of it?">${escapeHtml(note)}</textarea>
   `;
-
-  panel.querySelectorAll('.nav-btn[data-go]').forEach(b => {
-    b.onclick = () => select(b.dataset.go, b.dataset.line);
-  });
-
-  const ta = panel.querySelector('#note');
-  ta.addEventListener('input', () => {
-    const v = ta.value;
-    if(v.trim()) state.notes[s.id] = v; else delete state.notes[s.id];
-    save();
-  });
-
-  panel.scrollTop = 0;
-}
-
-function escapeHtml(str){
-  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-function select(id, line){
-  selected = id;
-  const s = BY_ID[id];
-  // Stay on the line you arrived on where that's possible, so stepping through
-  // an interchange doesn't silently switch you to a different line.
-  navLine = (line && s.lines.includes(line)) ? line
-          : (navLine && s.lines.includes(navLine)) ? navLine
-          : s.lines[0];
-  paintMap();
-  renderPanel();
-  renderList();
-  renderSheetHead();
-  ensureVisible(s);
-  if(isMobile() && document.body.dataset.sheet === 'closed') setSheet('peek');
-}
-
-/* Left/right arrow keys ride the current line. Ignored while typing a note. */
-document.addEventListener('keydown', e => {
-  if(!selected || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
-  const t = e.target.tagName;
-  if(t === 'TEXTAREA' || t === 'INPUT') return;
-  const { prev, next } = neighbours(selected, navLine);
-  const go = e.key === 'ArrowLeft' ? prev : next;
-  if(go){ e.preventDefault(); select(go, navLine); }
-});
-
-/* ============================================================
-   TALLY + METER
-   ============================================================ */
-function renderTally(){
-  const shown = STATIONS.filter(visible);
-  const avg = shown.length
-    ? (shown.reduce((a, s) => a + RATINGS[s.id], 0) / shown.length).toFixed(2)
-    : '—';
-
-  document.getElementById('tallyN').textContent = avg;
-  document.getElementById('tallyCount').textContent =
-    shown.length === 68 ? 'across all 68 stations' : `across ${shown.length} shown`;
-
-  const dist = document.getElementById('dist');
-  dist.innerHTML = [5,4,3,2,1].map(v => {
-    const n = shown.filter(s => RATINGS[s.id] === v).length;
-    const pct = shown.length ? (n / shown.length * 100) : 0;
-    return `<b style="flex:${n || 0.0001};background:${TIERS[v].hex}"
-              title="${TIERS[v].name}: ${n} station${n === 1 ? '' : 's'}"
-              >${pct > 7 ? n : ''}</b>`;
-  }).join('');
-}
-
-/* ============================================================
-   LIST VIEW
-   ============================================================ */
-const listview = document.getElementById('listview');
-let sortBy = 'line';   // 'line' | 'score'
-
-function renderList(){
-  let html = '';
-
-  if(sortBy === 'score'){
-    const rows = STATIONS.filter(visible)
-      .sort((a,b) => RATINGS[b.id] - RATINGS[a.id] || a.name.localeCompare(b.name, 'fr'));
-    for(const v of [5,4,3,2,1]){
-      const grp = rows.filter(s => RATINGS[s.id] === v);
-      if(!grp.length) continue;
-      html += `<div class="lgroup" style="--c:${TIERS[v].hex}">
-        <h3>${TIERS[v].name} — ${grp.length} station${grp.length === 1 ? '' : 's'}</h3></div>`;
-      html += grp.map(s => row(s, LINES[s.lines[0]].hex)).join('');
-    }
-  }else{
-    for(const k in ORDER){
-      if(!active[k]) continue;
-      const rows = ORDER[k].map(id => BY_ID[id]).filter(visible);
-      if(!rows.length) continue;
-      html += `<div class="lgroup" style="--c:${LINES[k].hex}">
-        <h3>Ligne ${LINES[k].num} · ${LINES[k].name} — ${escapeHtml(LINES[k].term)}</h3></div>`;
-      html += rows.map(s => row(s, LINES[k].hex)).join('');
-    }
+    panel.querySelectorAll(".nav-btn[data-go]").forEach((b) => {
+      b.onclick = () => onSelect2(b.dataset.go, b.dataset.line);
+    });
+    const ta = panel.querySelector("#note");
+    ta.addEventListener("input", () => {
+      const v = ta.value;
+      if (v.trim()) state.notes[s.id] = v;
+      else delete state.notes[s.id];
+      saveNotes();
+    });
+    panel.scrollTop = 0;
   }
+  var sheetHead = document.getElementById("sheetHead");
+  var shName = document.getElementById("shName");
+  var shScore = document.getElementById("shScore");
+  function setSheet(stateName) {
+    document.body.dataset.sheet = stateName;
+    sheetHead.setAttribute("aria-expanded", String(stateName === "open"));
+  }
+  function renderSheetHead() {
+    if (!state.selected) {
+      shName.textContent = "Nothing state.selected";
+      shScore.textContent = "";
+      return;
+    }
+    const s = BY_ID[state.selected], r = RATINGS[s.id];
+    shName.textContent = s.name;
+    shScore.textContent = r + "/5";
+    shScore.style.setProperty("--c", TIERS[r].hex);
+  }
+  sheetHead.onclick = () => setSheet(document.body.dataset.sheet === "open" ? "peek" : "open");
+  map.addEventListener("click", (e) => {
+    if (!e.target.closest(".st") && isMobile() && document.body.dataset.sheet === "open") {
+      setSheet("peek");
+    }
+  });
 
-  listview.innerHTML = html || `<div class="lgroup"><h3 style="--c:var(--dimmer)">No stations match</h3></div>`;
-  listview.querySelectorAll('.lrow').forEach(b => { b.onclick = () => select(b.dataset.id); });
-}
-
-function row(s, hex){
-  const r = RATINGS[s.id];
-  return `<button class="lrow" data-id="${s.id}">
+  // js/list.js
+  var onSelect3 = () => {
+  };
+  function initList(handlers) {
+    onSelect3 = handlers.onSelect;
+  }
+  var listview = document.getElementById("listview");
+  function renderList() {
+    let html = "";
+    if (state.sortBy === "score") {
+      const rows = STATIONS.filter(visible).sort((a, b) => RATINGS[b.id] - RATINGS[a.id] || a.name.localeCompare(b.name, "fr"));
+      for (const v of [5, 4, 3, 2, 1]) {
+        const grp = rows.filter((s) => RATINGS[s.id] === v);
+        if (!grp.length) continue;
+        html += `<div class="lgroup" style="--c:${TIERS[v].hex}">
+        <h3>${TIERS[v].name} \u2014 ${grp.length} station${grp.length === 1 ? "" : "s"}</h3></div>`;
+        html += grp.map((s) => row(s, LINES[s.lines[0]].hex)).join("");
+      }
+    } else {
+      for (const k in ORDER) {
+        if (!state.active[k]) continue;
+        const rows = ORDER[k].map((id) => BY_ID[id]).filter(visible);
+        if (!rows.length) continue;
+        html += `<div class="lgroup" style="--c:${LINES[k].hex}">
+        <h3>Ligne ${LINES[k].num} \xB7 ${LINES[k].name} \u2014 ${escapeHtml(LINES[k].term)}</h3></div>`;
+        html += rows.map((s) => row(s, LINES[k].hex)).join("");
+      }
+    }
+    listview.innerHTML = html || `<div class="lgroup"><h3 style="--c:var(--dimmer)">No stations match</h3></div>`;
+    listview.querySelectorAll(".lrow").forEach((b) => {
+      b.onclick = () => onSelect3(b.dataset.id);
+    });
+  }
+  function row(s, hex) {
+    const r = RATINGS[s.id];
+    return `<button class="lrow" data-id="${s.id}">
     <span class="bul" style="background:${hex}"></span>
     <span class="nm">${escapeHtml(s.name)}</span>
     <span class="sc" style="color:${TIERS[r].hex}">${r}/5</span>
   </button>`;
-}
-
-/* ============================================================
-   CONTROLS
-   ============================================================ */
-const chips = document.getElementById('lchips');
-chips.innerHTML = Object.keys(LINES).map(k =>
-  `<button class="lchip ${k}" data-line="${k}" aria-pressed="true" title="${LINES[k].term}">
-     <i></i><span>${LINES[k].name}</span>
-   </button>`).join('');
-chips.addEventListener('click', e => {
-  const b = e.target.closest('.lchip');
-  if(!b) return;
-  const k = b.dataset.line;
-  active[k] = !active[k];
-  b.setAttribute('aria-pressed', String(active[k]));
-  refresh();
-});
-
-const tchips = document.getElementById('tchips');
-tchips.innerHTML = [5,4,3,2,1].map(v =>
-  `<button class="tchip" data-tier="${v}" aria-pressed="true"
-     style="--c:${TIERS[v].hex}" title="${TIERS[v].name} — ${TIERS[v].gloss}">${v}</button>`).join('');
-tchips.addEventListener('click', e => {
-  const b = e.target.closest('.tchip');
-  if(!b) return;
-  const v = +b.dataset.tier;
-  tiers[v] = !tiers[v];
-  b.setAttribute('aria-pressed', String(tiers[v]));
-  refresh();
-});
-
-const resetBtn = document.getElementById('reset');
-function syncReset(){
-  const filtered = Object.values(active).some(v => !v)
-                || Object.values(tiers).some(v => !v)
-                || !!query;
-  resetBtn.hidden = !filtered;
-}
-resetBtn.onclick = () => {
-  for(const k in active) active[k] = true;
-  for(const v in tiers) tiers[v] = true;
-  query = '';
-  document.getElementById('q').value = '';
-  chips.querySelectorAll('.lchip').forEach(b => b.setAttribute('aria-pressed','true'));
-  tchips.querySelectorAll('.tchip').forEach(b => b.setAttribute('aria-pressed','true'));
-  refresh();
-};
-
-function refresh(){ paintMap(); renderTally(); renderList(); syncReset(); }
-
-const mL = document.getElementById('modeLines'), mR = document.getElementById('modeRatings');
-mL.onclick = () => { mode = 'lines';   mL.setAttribute('aria-pressed','true');  mR.setAttribute('aria-pressed','false'); paintMap(); };
-mR.onclick = () => { mode = 'ratings'; mR.setAttribute('aria-pressed','true');  mL.setAttribute('aria-pressed','false'); paintMap(); };
-
-const sL = document.getElementById('sortLine'), sS = document.getElementById('sortScore');
-sL.onclick = () => { sortBy = 'line';  sL.setAttribute('aria-pressed','true');  sS.setAttribute('aria-pressed','false'); renderList(); };
-sS.onclick = () => { sortBy = 'score'; sS.setAttribute('aria-pressed','true');  sL.setAttribute('aria-pressed','false'); renderList(); };
-
-const vM = document.getElementById('viewMap'), vL = document.getElementById('viewList');
-vM.onclick = () => { document.body.dataset.view = 'map';  vM.setAttribute('aria-pressed','true');  vL.setAttribute('aria-pressed','false'); };
-vL.onclick = () => { document.body.dataset.view = 'list'; vL.setAttribute('aria-pressed','true');  vM.setAttribute('aria-pressed','false'); };
-
-document.getElementById('q').addEventListener('input', e => {
-  query = norm(e.target.value.trim());
-  refresh();
-});
-
-document.getElementById('exportBtn').onclick = () => {
-  const payload = STATIONS.map(s => ({
-    station:s.name, line:s.lines.map(l => LINES[l].en).join('/'),
-    mattsRating:RATINGS[s.id], myNote:state.notes[s.id] || '',
-    source:`https://www.metrodemontreal.com/${s.path}/archmain.html`
-  }));
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'mtlmetro-stations.json';
-  a.click();
-  URL.revokeObjectURL(a.href);
-};
-
-/* ============================================================
-   MOBILE BOTTOM SHEET
-   The panel is a sibling column on desktop and an overlay on mobile, so it
-   never competes with the map for vertical space.
-   ============================================================ */
-const sheetHead = document.getElementById('sheetHead');
-const shName = document.getElementById('shName');
-const shScore = document.getElementById('shScore');
-
-function setSheet(stateName){
-  document.body.dataset.sheet = stateName;
-  sheetHead.setAttribute('aria-expanded', String(stateName === 'open'));
-}
-function renderSheetHead(){
-  if(!selected){ shName.textContent = 'Nothing selected'; shScore.textContent = ''; return; }
-  const s = BY_ID[selected], r = RATINGS[s.id];
-  shName.textContent = s.name;
-  shScore.textContent = r + '/5';
-  shScore.style.setProperty('--c', TIERS[r].hex);
-}
-sheetHead.onclick = () => setSheet(document.body.dataset.sheet === 'open' ? 'peek' : 'open');
-
-// Tapping empty map closes the sheet back down to a peek.
-map.addEventListener('click', e => {
-  if(!e.target.closest('.st') && isMobile() && document.body.dataset.sheet === 'open'){
-    setSheet('peek');
   }
-});
 
-/* ============================================================
-   FILTER DRAWER
-   ============================================================ */
-const filtersToggle = document.getElementById('filtersToggle');
-filtersToggle.onclick = () => {
-  const open = document.body.dataset.filters === 'open';
-  document.body.dataset.filters = open ? 'closed' : 'open';
-  filtersToggle.setAttribute('aria-expanded', String(!open));
-  applyView();
-};
+  // js/tally.js
+  function renderTally() {
+    const shown = STATIONS.filter(visible);
+    const avg = shown.length ? (shown.reduce((a, s) => a + RATINGS[s.id], 0) / shown.length).toFixed(2) : "\u2014";
+    document.getElementById("tallyN").textContent = avg;
+    document.getElementById("tallyCount").textContent = shown.length === 68 ? "across all 68 stations" : `across ${shown.length} shown`;
+    const dist = document.getElementById("dist");
+    dist.innerHTML = [5, 4, 3, 2, 1].map((v) => {
+      const n = shown.filter((s) => RATINGS[s.id] === v).length;
+      const pct = shown.length ? n / shown.length * 100 : 0;
+      return `<b style="flex:${n || 1e-4};background:${TIERS[v].hex}"
+              title="${TIERS[v].name}: ${n} station${n === 1 ? "" : "s"}"
+              >${pct > 7 ? n : ""}</b>`;
+    }).join("");
+  }
 
-/* ============================================================
-   BOOT
-   ============================================================ */
-document.body.dataset.view = 'map';
-document.body.dataset.filters = 'closed';
-setSheet('closed');
-(async () => {
-  await loadState();
-  buildMap();
-  // A whole-network fit is unreadable on a phone, so start zoomed into downtown.
-  if(isMobile()){
-    // Match the window height to the map's full height, then let width follow.
-    // On a tall phone that lands ~405 user units across, so labels render near
-    // their design size instead of being scaled down to noise.
-    focusOn(580, BASE_VIEW.y + BASE_VIEW.h / 2,
-            Math.min(BASE_VIEW.w, BASE_VIEW.h / aspect()));
-  } else fitAll();
-  renderTally();
-  renderPanel();
-  renderList();
-  syncReset();
+  // js/controls.js
+  var refresh = () => {
+  };
+  function initControls(handlers) {
+    refresh = handlers.refresh;
+    syncReset();
+  }
+  var chips = document.getElementById("lchips");
+  chips.innerHTML = Object.keys(LINES).map((k) => `<button class="lchip ${k}" data-line="${k}" aria-pressed="true" title="${LINES[k].term}">
+     <i></i><span>${LINES[k].name}</span>
+   </button>`).join("");
+  chips.addEventListener("click", (e) => {
+    const b = e.target.closest(".lchip");
+    if (!b) return;
+    const k = b.dataset.line;
+    state.active[k] = !state.active[k];
+    b.setAttribute("aria-pressed", String(state.active[k]));
+    refresh();
+  });
+  var tchips = document.getElementById("tchips");
+  tchips.innerHTML = [5, 4, 3, 2, 1].map((v) => `<button class="tchip" data-tier="${v}" aria-pressed="true"
+     style="--c:${TIERS[v].hex}" title="${TIERS[v].name} \u2014 ${TIERS[v].gloss}">${v}</button>`).join("");
+  tchips.addEventListener("click", (e) => {
+    const b = e.target.closest(".tchip");
+    if (!b) return;
+    const v = +b.dataset.tier;
+    state.tiers[v] = !state.tiers[v];
+    b.setAttribute("aria-pressed", String(state.tiers[v]));
+    refresh();
+  });
+  var resetBtn = document.getElementById("reset");
+  function syncReset() {
+    const filtered = Object.values(state.active).some((v) => !v) || Object.values(state.tiers).some((v) => !v) || !!state.query;
+    resetBtn.hidden = !filtered;
+  }
+  resetBtn.onclick = () => {
+    for (const k in state.active) state.active[k] = true;
+    for (const v in state.tiers) state.tiers[v] = true;
+    state.query = "";
+    document.getElementById("q").value = "";
+    chips.querySelectorAll(".lchip").forEach((b) => b.setAttribute("aria-pressed", "true"));
+    tchips.querySelectorAll(".tchip").forEach((b) => b.setAttribute("aria-pressed", "true"));
+    refresh();
+  };
+  var mL = document.getElementById("modeLines");
+  var mR = document.getElementById("modeRatings");
+  mL.onclick = () => {
+    state.mode = "lines";
+    mL.setAttribute("aria-pressed", "true");
+    mR.setAttribute("aria-pressed", "false");
+    paintMap();
+  };
+  mR.onclick = () => {
+    state.mode = "ratings";
+    mR.setAttribute("aria-pressed", "true");
+    mL.setAttribute("aria-pressed", "false");
+    paintMap();
+  };
+  var sL = document.getElementById("sortLine");
+  var sS = document.getElementById("sortScore");
+  sL.onclick = () => {
+    state.sortBy = "line";
+    sL.setAttribute("aria-pressed", "true");
+    sS.setAttribute("aria-pressed", "false");
+    renderList();
+  };
+  sS.onclick = () => {
+    state.sortBy = "score";
+    sS.setAttribute("aria-pressed", "true");
+    sL.setAttribute("aria-pressed", "false");
+    renderList();
+  };
+  var vM = document.getElementById("viewMap");
+  var vL = document.getElementById("viewList");
+  vM.onclick = () => {
+    document.body.dataset.view = "map";
+    vM.setAttribute("aria-pressed", "true");
+    vL.setAttribute("aria-pressed", "false");
+  };
+  vL.onclick = () => {
+    document.body.dataset.view = "list";
+    vL.setAttribute("aria-pressed", "true");
+    vM.setAttribute("aria-pressed", "false");
+  };
+  document.getElementById("q").addEventListener("input", (e) => {
+    state.query = norm(e.target.value.trim());
+    refresh();
+  });
+  document.getElementById("exportBtn").onclick = () => {
+    const payload = STATIONS.map((s) => ({
+      station: s.name,
+      line: s.lines.map((l) => LINES[l].en).join("/"),
+      mattsRating: RATINGS[s.id],
+      myNote: state.notes[s.id] || "",
+      source: `https://www.metrodemontreal.com/${s.path}/archmain.html`
+    }));
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "mtlmetro-stations.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  var filtersToggle = document.getElementById("filtersToggle");
+  filtersToggle.onclick = () => {
+    const open = document.body.dataset.filters === "open";
+    document.body.dataset.filters = open ? "closed" : "open";
+    filtersToggle.setAttribute("aria-expanded", String(!open));
+    applyView();
+  };
+
+  // js/main.js
+  function refresh2() {
+    paintMap();
+    renderTally();
+    renderList();
+    syncReset();
+  }
+  function select(id, line) {
+    state.selected = id;
+    const s = BY_ID[id];
+    state.navLine = line && s.lines.includes(line) ? line : state.navLine && s.lines.includes(state.navLine) ? state.navLine : s.lines[0];
+    paintMap();
+    renderPanel();
+    renderList();
+    renderSheetHead();
+    ensureVisible(s);
+    if (isMobile() && document.body.dataset.sheet === "closed") setSheet("peek");
+  }
+  document.addEventListener("keydown", (e) => {
+    if (!state.selected || e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const t = e.target.tagName;
+    if (t === "TEXTAREA" || t === "INPUT") return;
+    const { prev, next } = neighbours(state.selected, state.navLine);
+    const go = e.key === "ArrowLeft" ? prev : next;
+    if (go) {
+      e.preventDefault();
+      select(go, state.navLine);
+    }
+  });
+  document.body.dataset.view = "map";
+  document.body.dataset.filters = "closed";
+  setSheet("closed");
+  initMap({ onSelect: select });
+  initPanel({ onSelect: select });
+  initList({ onSelect: select });
+  initControls({ refresh: refresh2 });
+  (async () => {
+    await loadNotes();
+    buildMap();
+    initialView();
+    renderTally();
+    renderPanel();
+    renderList();
+    syncReset();
+  })();
 })();
 </script>
