@@ -196,26 +196,45 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
   font-family:var(--display);font-weight:800;font-stretch:112%;
   font-size:27px;line-height:1.08;letter-spacing:-.005em;margin:8px 0 14px;
 }
-.p-lines{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px}
-.p-line{
-  display:flex;align-items:center;gap:7px;padding:4px 10px;border-radius:99px;
-  font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
-  background:color-mix(in srgb, var(--c) 14%, transparent);color:var(--c);
-}
-.p-line b{width:15px;height:15px;border-radius:50%;background:var(--c);color:var(--ink);
-  display:grid;place-items:center;font-size:9.5px;font-weight:600}
-
 .facts{border-top:1px solid var(--rule-soft);margin-bottom:20px}
 .fact{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--rule-soft)}
 .fact dt{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dimmer);flex:0 0 auto;padding-top:2px}
 .fact dd{margin:0;text-align:right;font-size:13.5px;color:var(--text)}
+
+.nav{display:flex;flex-direction:column;gap:9px;margin-bottom:20px}
+.nav-line{border:1px solid var(--rule);border-radius:4px;overflow:hidden}
+.nav-line.active{border-color:color-mix(in srgb, var(--c) 52%, transparent)}
+.nav-head{
+  display:flex;align-items:center;gap:8px;padding:7px 11px;
+  background:color-mix(in srgb, var(--c) 12%, transparent);
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--c);
+}
+.nav-head b{
+  width:15px;height:15px;border-radius:50%;background:var(--c);color:var(--ink);
+  display:grid;place-items:center;font-size:9.5px;font-weight:600;flex:0 0 auto;
+}
+.nav-row{display:grid;grid-template-columns:1fr 1fr}
+.nav-btn{
+  display:flex;align-items:center;gap:8px;padding:11px;min-width:0;
+  font-size:13px;color:var(--text);text-align:left;
+}
+.nav-btn + .nav-btn{border-left:1px solid var(--rule);justify-content:flex-end;text-align:right}
+.nav-btn:hover:not(:disabled){background:color-mix(in srgb, var(--c) 14%, transparent)}
+.nav-btn:disabled{color:var(--dimmer);cursor:default}
+.nav-btn .ar{color:var(--c);flex:0 0 auto;font-size:16px;line-height:1}
+.nav-btn:disabled .ar{color:var(--rule)}
+.nav-btn .nm2{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav-term{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  white-space:nowrap;
+}
 
 .p-h{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--dimmer);margin-bottom:9px}
 
 .score{
   border:1px solid color-mix(in srgb, var(--c) 34%, transparent);
   background:color-mix(in srgb, var(--c) 8%, transparent);
-  border-radius:4px;padding:15px 16px 13px;margin-bottom:20px;
+  border-radius:4px;padding:15px 16px 13px;margin-bottom:18px;
 }
 .score .pips{display:flex;gap:4px;margin-bottom:11px}
 .score .pip{width:26px;height:26px;color:color-mix(in srgb, var(--c) 22%, transparent)}
@@ -577,6 +596,7 @@ let mode = 'ratings';          // 'lines' | 'ratings'
 let active = { g:true, o:true, y:true, b:true };
 let tiers = { 1:true, 2:true, 3:true, 4:true, 5:true };
 let selected = null;
+let navLine = null;            // which line the prev/next arrows follow
 let query = '';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -682,7 +702,7 @@ function paintMap(){
   map.querySelectorAll('.st').forEach(g => {
     const s = BY_ID[g.dataset.id];
     const dot = g.querySelector('.dot');
-    const shown = visible(s);
+    const shown = visible(s) || selected === s.id;
     g.classList.toggle('dim', !shown);
     g.classList.toggle('sel', selected === s.id);
 
@@ -783,12 +803,35 @@ const PIP_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true">
   <path d="M7.2 11.4 12 18l4.8-6.6z" fill="currentColor"/>
 </svg>`;
 
+/* Neighbours along a given line. ORDER holds each line in running order,
+   so prev/next is just a step either side of the station's index. */
+function neighbours(id, line){
+  const arr = ORDER[line];
+  const i = arr.indexOf(id);
+  return { prev: i > 0 ? arr[i - 1] : null, next: i < arr.length - 1 ? arr[i + 1] : null };
+}
+
+function navBtn(id, line, dir){
+  const arrow = dir === 'prev' ? '\u2190' : '\u2192';
+  if(!id){
+    const term = `<span class="nav-term">End of line</span>`;
+    return `<button class="nav-btn ${dir}" disabled>${
+      dir === 'prev' ? `<span class="ar">${arrow}</span>${term}` : `${term}<span class="ar">${arrow}</span>`
+    }</button>`;
+  }
+  const n = escapeHtml(BY_ID[id].name);
+  const nm = `<span class="nm2">${n}</span>`;
+  return `<button class="nav-btn ${dir}" data-go="${id}" data-line="${line}" title="${n}">${
+    dir === 'prev' ? `<span class="ar">${arrow}</span>${nm}` : `${nm}<span class="ar">${arrow}</span>`
+  }</button>`;
+}
+
 function renderPanel(){
   if(!selected){
     panel.innerHTML = `<div class="p-empty">
       <b>Nothing selected</b>
-      Pick a station to see how Matt rated it and why it's worth a look.
-      Filter by score to find the nine five-métro stations, or the six he'd rather you skipped.
+      Pick a station to see how Matt rated it, then ride the line with the arrows.
+      At an interchange you get a set of arrows per line, so you can change trains.
     </div>`;
     return;
   }
@@ -796,15 +839,17 @@ function renderPanel(){
   const r = RATINGS[s.id];
   const note = state.notes[s.id] || '';
 
-  panel.innerHTML = `
-    <div class="p-eyebrow">${s.lines.map(l => 'Ligne ' + LINES[l].num).join(' · ')}</div>
-    <h2 class="p-name">${escapeHtml(s.name)}</h2>
+  const nav = s.lines.map(l => {
+    const { prev, next } = neighbours(s.id, l);
+    return `<div class="nav-line${l === navLine ? ' active' : ''}" style="--c:${LINES[l].hex}">
+      <div class="nav-head"><b>${LINES[l].num}</b> Ligne ${LINES[l].name}</div>
+      <div class="nav-row">${navBtn(prev, l, 'prev')}${navBtn(next, l, 'next')}</div>
+    </div>`;
+  }).join('');
 
-    <div class="p-lines">
-      ${s.lines.map(l => `<span class="p-line" style="--c:${LINES[l].hex}">
-        <b>${LINES[l].num}</b> ${LINES[l].name}
-      </span>`).join('')}
-    </div>
+  panel.innerHTML = `
+    <div class="p-eyebrow">${s.lines.length > 1 ? 'Interchange · ' : ''}${escapeHtml(s.borough)}</div>
+    <h2 class="p-name">${escapeHtml(s.name)}</h2>
 
     <div class="score" style="--c:${TIERS[r].hex}">
       <div class="pips">
@@ -815,10 +860,11 @@ function renderPanel(){
       <div class="score-by">Rated by Matt · metrodemontreal.com</div>
     </div>
 
+    <div class="nav">${nav}</div>
+
     <dl class="facts">
-      <div class="fact"><dt>Borough</dt><dd>${escapeHtml(s.borough)}</dd></div>
       <div class="fact"><dt>Opened</dt><dd>${s.opened}</dd></div>
-      <div class="fact"><dt>Interchange</dt><dd>${s.lines.length > 1 ? 'Yes — ' + s.lines.map(l => LINES[l].en).join(' / ') : 'No'}</dd></div>
+      <div class="fact"><dt>Lines</dt><dd>${s.lines.map(l => LINES[l].en).join(' · ')}</dd></div>
     </dl>
 
     <a class="readlink" href="https://www.metrodemontreal.com/${s.path}/archmain.html" target="_blank" rel="noopener">
@@ -835,24 +881,46 @@ function renderPanel(){
     <textarea id="note" placeholder="Been here? What did you make of it?">${escapeHtml(note)}</textarea>
   `;
 
+  panel.querySelectorAll('.nav-btn[data-go]').forEach(b => {
+    b.onclick = () => select(b.dataset.go, b.dataset.line);
+  });
+
   const ta = panel.querySelector('#note');
   ta.addEventListener('input', () => {
     const v = ta.value;
     if(v.trim()) state.notes[s.id] = v; else delete state.notes[s.id];
     save();
   });
+
+  panel.scrollTop = 0;
 }
 
 function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function select(id){
+function select(id, line){
   selected = id;
+  const s = BY_ID[id];
+  // Stay on the line you arrived on where that's possible, so stepping through
+  // an interchange doesn't silently switch you to a different line.
+  navLine = (line && s.lines.includes(line)) ? line
+          : (navLine && s.lines.includes(navLine)) ? navLine
+          : s.lines[0];
   paintMap();
   renderPanel();
   renderList();
 }
+
+/* Left/right arrow keys ride the current line. Ignored while typing a note. */
+document.addEventListener('keydown', e => {
+  if(!selected || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+  const t = e.target.tagName;
+  if(t === 'TEXTAREA' || t === 'INPUT') return;
+  const { prev, next } = neighbours(selected, navLine);
+  const go = e.key === 'ArrowLeft' ? prev : next;
+  if(go){ e.preventDefault(); select(go, navLine); }
+});
 
 /* ============================================================
    TALLY + METER
