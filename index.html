@@ -85,6 +85,32 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 
 /* Label and its chips must wrap as one unit — as separate flex children the
    label gets stranded at the end of the previous row. */
+/* Toggle: map colouring. A switch reads as on/off, which is what this is —
+   unlike a segmented control, which implies two peer alternatives. */
+.switch{display:flex;align-items:center;gap:9px;padding:4px 2px}
+.switch .track{
+  position:relative;width:34px;height:19px;border-radius:99px;flex:0 0 auto;
+  background:var(--rule);border:1px solid var(--rule);transition:background .16s ease;
+}
+.switch .knob{
+  position:absolute;top:1px;left:1px;width:15px;height:15px;border-radius:50%;
+  background:var(--dim);transition:transform .16s ease, background .16s ease;
+}
+.switch[aria-checked="true"] .track{background:color-mix(in srgb, var(--gold) 38%, transparent);border-color:var(--gold)}
+.switch[aria-checked="true"] .knob{transform:translateX(15px);background:var(--gold)}
+.switch-label{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--dim);white-space:nowrap;
+}
+.switch[aria-checked="true"] .switch-label{color:var(--text)}
+@media (prefers-reduced-motion:reduce){
+  .switch .track,.switch .knob{transition:none}
+}
+
+/* Each control belongs to exactly one view; showing both is noise. */
+body[data-view="list"] #modeToggle{display:none}
+body[data-view="map"]  #sortSeg{display:none}
+
 .chipGroup{display:flex;align-items:center;gap:8px}
 .railLabel{
   font-family:var(--mono);font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;
@@ -359,7 +385,10 @@ body[data-view="list"] .mapwrap{display:none}
   .panel{
     position:absolute;left:0;right:0;bottom:0;z-index:20;
     padding-bottom:env(safe-area-inset-bottom);
-    max-height:82dvh;border-left:none;border-top:1px solid var(--rule);
+    /* 82% of the STAGE, not the viewport. Against dvh the sheet outgrows its
+       container when the filter drawer opens, and .stage's overflow:hidden
+       clips the grab handle off the top. */
+    max-height:82%;border-left:none;border-top:1px solid var(--rule);
     border-radius:14px 14px 0 0;box-shadow:0 -14px 36px rgba(0,0,0,.55);
     transform:translateY(100%);
     transition:transform .22s cubic-bezier(.32,.72,0,1);
@@ -433,12 +462,12 @@ body[data-view="list"] .mapwrap{display:none}
     </button>
 
     <div class="rail-more" id="railMore">
-      <div class="seg" role="group" aria-label="Colour the map by">
-        <button id="modeRatings" aria-pressed="true">Ratings</button>
-        <button id="modeLines" aria-pressed="false">Lines</button>
-      </div>
+      <button class="switch" id="modeToggle" role="switch" aria-checked="true">
+        <span class="track"><span class="knob"></span></span>
+        <span class="switch-label">Show stations as ratings</span>
+      </button>
 
-      <div class="seg" role="group" aria-label="Order the list by">
+      <div class="seg" id="sortSeg" role="group" aria-label="Order the list by">
         <button id="sortLine" aria-pressed="true">By line</button>
         <button id="sortScore" aria-pressed="false">By score</button>
       </div>
@@ -641,6 +670,11 @@ body[data-view="list"] .mapwrap{display:none}
   }
   var norm = (str) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/['\u2019\u00b4\u2013\u2014-]/g, " ");
   var isMobile = () => window.matchMedia("(max-width: 900px)").matches;
+  function setFilterDrawer(open) {
+    document.body.dataset.filters = open ? "open" : "closed";
+    const btn = document.getElementById("filtersToggle");
+    if (btn) btn.setAttribute("aria-expanded", String(open));
+  }
 
   // js/state.js
   var state = {
@@ -961,7 +995,11 @@ body[data-view="list"] .mapwrap{display:none}
   };
   function initPanel(handlers) {
     onSelect2 = handlers.onSelect;
-    sheetHead.onclick = () => setSheet(document.body.dataset.sheet === "open" ? "peek" : "open");
+    sheetHead.onclick = () => {
+      const opening = document.body.dataset.sheet !== "open";
+      if (opening) setFilterDrawer(false);
+      setSheet(opening ? "open" : "peek");
+    };
   }
   var panel = document.getElementById("panel");
   var PIP_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1061,7 +1099,6 @@ body[data-view="list"] .mapwrap{display:none}
     shScore.textContent = r + "/5";
     shScore.style.setProperty("--c", TIERS[r].hex);
   }
-  sheetHead.onclick = () => setSheet(document.body.dataset.sheet === "open" ? "peek" : "open");
   map.addEventListener("click", (e) => {
     if (!e.target.closest(".st") && isMobile() && document.body.dataset.sheet === "open") {
       setSheet("peek");
@@ -1170,18 +1207,11 @@ body[data-view="list"] .mapwrap{display:none}
     tchips.querySelectorAll(".tchip").forEach((b) => b.setAttribute("aria-pressed", "true"));
     refresh();
   };
-  var mL = document.getElementById("modeLines");
-  var mR = document.getElementById("modeRatings");
-  mL.onclick = () => {
-    state.mode = "lines";
-    mL.setAttribute("aria-pressed", "true");
-    mR.setAttribute("aria-pressed", "false");
-    paintMap();
-  };
-  mR.onclick = () => {
-    state.mode = "ratings";
-    mR.setAttribute("aria-pressed", "true");
-    mL.setAttribute("aria-pressed", "false");
+  var modeToggle = document.getElementById("modeToggle");
+  modeToggle.onclick = () => {
+    const on = state.mode !== "ratings";
+    state.mode = on ? "ratings" : "lines";
+    modeToggle.setAttribute("aria-checked", String(on));
     paintMap();
   };
   var sL = document.getElementById("sortLine");
@@ -1231,9 +1261,9 @@ body[data-view="list"] .mapwrap{display:none}
   };
   var filtersToggle = document.getElementById("filtersToggle");
   filtersToggle.onclick = () => {
-    const open = document.body.dataset.filters === "open";
-    document.body.dataset.filters = open ? "closed" : "open";
-    filtersToggle.setAttribute("aria-expanded", String(!open));
+    const open = document.body.dataset.filters !== "open";
+    setFilterDrawer(open);
+    if (open && document.body.dataset.sheet === "open") setSheet("peek");
     applyView();
   };
 

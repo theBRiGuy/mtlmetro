@@ -1,0 +1,110 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>mtlmetro — a rating map of the Montréal Métro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="css/styles.css">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&family=Inter+Tight:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+
+<div class="app">
+  <header class="masthead">
+    <div class="mark">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="10.2" fill="none" stroke="currentColor" stroke-width="1.9"/>
+        <path d="M12 4.9v7.4" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+        <path d="M6.9 11.6 12 18.6l5.1-7z" fill="currentColor"/>
+      </svg>
+      <div class="wordmark">
+        <b>mtlmetro</b>
+        <span>68 stations · 4 lignes</span>
+      </div>
+    </div>
+
+    <div class="tally">
+      <span class="n" id="tallyN">3.26</span>
+      <span class="of">avg <em id="tallyCount">across all 68 stations</em></span>
+    </div>
+
+    <div class="dist" id="dist" aria-hidden="true"></div>
+  </header>
+
+  <div class="rail">
+    <div class="seg" role="group" aria-label="View">
+      <button id="viewMap" aria-pressed="true">Map</button>
+      <button id="viewList" aria-pressed="false">List</button>
+    </div>
+
+    <button class="filtersToggle" id="filtersToggle" aria-expanded="false" aria-controls="railMore">
+      Filters <span class="chev">▾</span>
+    </button>
+
+    <div class="rail-more" id="railMore">
+      <button class="switch" id="modeToggle" role="switch" aria-checked="true">
+        <span class="track"><span class="knob"></span></span>
+        <span class="switch-label">Show stations as ratings</span>
+      </button>
+
+      <div class="seg" id="sortSeg" role="group" aria-label="Order the list by">
+        <button id="sortLine" aria-pressed="true">By line</button>
+        <button id="sortScore" aria-pressed="false">By score</button>
+      </div>
+
+      <div class="chipGroup">
+        <span class="railLabel" id="lchipsLabel">Show lines</span>
+        <div class="lchips" id="lchips" role="group" aria-labelledby="lchipsLabel"></div>
+      </div>
+
+      <div class="chipGroup">
+        <span class="railLabel" id="tchipsLabel">Show scores</span>
+        <div class="tchips" id="tchips" role="group" aria-labelledby="tchipsLabel"></div>
+      </div>
+
+      <button class="reset" id="reset" hidden>Show all 68</button>
+
+      <label class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>
+        </svg>
+        <input id="q" type="search" placeholder="Find a station" autocomplete="off" aria-label="Find a station">
+      </label>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="mapwrap">
+      <svg id="map" role="img" aria-label="Map of the Montréal Métro"></svg>
+      <div class="zoom">
+        <button id="zin" aria-label="Zoom in">+</button>
+        <button id="zout" aria-label="Zoom out">−</button>
+        <button id="zfit" aria-label="Fit map to view">⤢</button>
+      </div>
+      <div class="hint">Drag to pan · scroll to zoom</div>
+    </div>
+
+    <div class="listview" id="listview"></div>
+
+    <aside class="panel" id="sheet">
+      <button class="sheetHead" id="sheetHead" aria-expanded="false">
+        <span class="grab"></span>
+        <span class="sh-row">
+          <span class="sh-name" id="shName">Nothing selected</span>
+          <span class="sh-score" id="shScore"></span>
+        </span>
+      </button>
+      <div class="panel-scroll" id="panel"></div>
+      <div class="panel-foot">
+        <span id="saveState">Notes saved as you go</span>
+        <span class="sp"></span>
+        <button id="exportBtn">Export</button>
+      </div>
+      <div class="credit">
+        Ratings &amp; station data by Matt at
+        <a href="https://www.metrodemontreal.com/" target="_blank" rel="noopener">metrodemontreal.com</a>.
+        Go there for the write-ups.
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
