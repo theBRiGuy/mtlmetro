@@ -5,6 +5,7 @@ import { LINES, BY_ID, TIERS, RATINGS, neighbours } from './data.js';
 import { state } from './state.js';
 import { escapeHtml, isMobile, setFilterDrawer } from './dom.js';
 import { saveNotes } from './store.js';
+import { getPhoto } from './photos.js';
 import { map } from './map.js';
 
 let onSelect = () => {};
@@ -42,10 +43,26 @@ function navBtn(id, line, dir){
   }</button>`;
 }
 
+/* Photos are an enhancement layered on top of a panel that already works, so
+   this returns an empty string whenever there's nothing to show — no spinner,
+   no placeholder, no layout reserved for something that may never arrive. */
+function photoBlock(s){
+  const ph = getPhoto(s.id);
+  if(!ph) return '';
+  return `<figure class="photo">
+    <img src="${ph.thumb}" alt="${escapeHtml(s.name)} station"
+         loading="lazy" decoding="async"
+         onerror="this.closest('.photo').remove()">
+    <figcaption>
+      <a href="${ph.page}" target="_blank" rel="noopener">Photo via Wikipédia</a>
+    </figcaption>
+  </figure>`;
+}
+
 export function renderPanel(){
   if(!state.selected){
     panel.innerHTML = `<div class="p-empty">
-      <b>Nothing state.selected</b>
+      <b>Nothing selected</b>
       Pick a station to see how Matt rated it, then ride the line with the arrows.
       At an interchange you get a set of arrows per line, so you can change trains.
     </div>`;
@@ -57,7 +74,7 @@ export function renderPanel(){
 
   const nav = s.lines.map(l => {
     const { prev, next } = neighbours(s.id, l);
-    return `<div class="nav-line${l === state.navLine ? ' state.active' : ''}" style="--c:${LINES[l].hex}">
+    return `<div class="nav-line${l === state.navLine ? ' active' : ''}" style="--c:${LINES[l].hex}">
       <div class="nav-head"><b>${LINES[l].num}</b> Ligne ${LINES[l].name}</div>
       <div class="nav-row">${navBtn(prev, l, 'prev')}${navBtn(next, l, 'next')}</div>
     </div>`;
@@ -66,6 +83,8 @@ export function renderPanel(){
   panel.innerHTML = `
     <div class="p-eyebrow">${s.lines.length > 1 ? 'Interchange · ' : ''}${escapeHtml(s.borough)}</div>
     <h2 class="p-name">${escapeHtml(s.name)}</h2>
+
+    ${photoBlock(s)}
 
     <div class="score" style="--c:${TIERS[r].hex}">
       <div class="pips">
@@ -126,7 +145,7 @@ export function setSheet(stateName){
   sheetHead.setAttribute('aria-expanded', String(stateName === 'open'));
 }
 export function renderSheetHead(){
-  if(!state.selected){ shName.textContent = 'Nothing state.selected'; shScore.textContent = ''; return; }
+  if(!state.selected){ shName.textContent = 'Nothing selected'; shScore.textContent = ''; return; }
   const s = BY_ID[state.selected], r = RATINGS[s.id];
   shName.textContent = s.name;
   shScore.textContent = r + '/5';

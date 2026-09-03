@@ -61,6 +61,7 @@ js/
   list.js           list view
   tally.js          masthead average + distribution bar
   controls.js       filter rail
+  photos.js         station photos from the Wikipedia API
   main.js           entry point: wiring, select(), refresh()
 build.mjs           optional: bundles the above into dist/index.html
 ```
@@ -96,6 +97,25 @@ real API and nothing above them changes.
 
 `data.js` is the other candidate — it's currently a static table, and would
 become the response to `GET /api/stations`.
+
+## Station photos
+
+`photos.js` asks the French Wikipedia API for each article's lead image at
+runtime rather than hard-coding URLs, which would break whenever an editor
+swaps a photo. Two batched requests (50 titles each) cover all 68 stations at
+boot; the images themselves load lazily when a station is opened, and results
+are cached in `sessionStorage`.
+
+It degrades to nothing. If the API is unreachable, an article has no image, or
+an image 404s, the panel renders without a photo — no spinner, no broken-image
+icon, no reserved empty space.
+
+**Licensing:** Wikipedia photos are contributor-owned and mostly CC-licensed,
+which generally requires crediting the photographer, not just the source. The
+caption currently says "Photo via Wikipédia" and links to the article. That is
+a courtesy credit, not full compliance. To do it properly, request
+`imageinfo` with `extmetadata` from Commons and display the `Artist` and
+`LicenseShortName` fields per image.
 
 ## Notes on the data
 

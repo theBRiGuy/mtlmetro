@@ -262,6 +262,21 @@ body[data-view="map"]  #sortSeg{display:none}
 
 .p-h{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--dimmer);margin-bottom:9px}
 
+/* Station photo. aspect-ratio keeps the slot stable so a late-arriving image
+   doesn't shove the rating card down the page. */
+.photo{margin:0 0 16px;border:1px solid var(--rule);border-radius:4px;overflow:hidden;background:var(--surface)}
+.photo img{
+  display:block;width:100%;aspect-ratio:16/9;object-fit:cover;
+  max-height:34vh;                 /* the rating must stay visible alongside it */
+  background:var(--surface-2);
+}
+.photo figcaption{
+  padding:7px 11px;border-top:1px solid var(--rule-soft);
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+}
+.photo figcaption a{color:var(--dimmer);text-decoration:none}
+.photo figcaption a:hover{color:var(--text);text-decoration:underline}
+
 .score{
   border:1px solid color-mix(in srgb, var(--c) 34%, transparent);
   background:color-mix(in srgb, var(--c) 8%, transparent);
