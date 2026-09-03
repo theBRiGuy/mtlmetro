@@ -268,6 +268,21 @@ body[data-view="map"]  #sortSeg{display:none}
 
 .p-h{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--dimmer);margin-bottom:9px}
 
+/* Station photo. aspect-ratio keeps the slot stable so a late-arriving image
+   doesn't shove the rating card down the page. */
+.photo{margin:0 0 16px;border:1px solid var(--rule);border-radius:4px;overflow:hidden;background:var(--surface)}
+.photo img{
+  display:block;width:100%;aspect-ratio:16/9;object-fit:cover;
+  max-height:34vh;                 /* the rating must stay visible alongside it */
+  background:var(--surface-2);
+}
+.photo figcaption{
+  padding:7px 11px;border-top:1px solid var(--rule-soft);
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+}
+.photo figcaption a{color:var(--dimmer);text-decoration:none}
+.photo figcaption a:hover{color:var(--text);text-decoration:underline}
+
 .score{
   border:1px solid color-mix(in srgb, var(--c) 34%, transparent);
   background:color-mix(in srgb, var(--c) 8%, transparent);
@@ -990,6 +1005,119 @@ body[data-view="list"] .mapwrap{display:none}
     }
   }
 
+  // js/photos.js
+  var API = "https://fr.wikipedia.org/w/api.php";
+  var CACHE_KEY = "mtlmetro:photos:v1";
+  var THUMB_WIDTH = 900;
+  var TITLE_OVERRIDES = {
+    berri: "Berri-UQAM (m\xE9tro de Montr\xE9al)",
+    longueuil: "Longueuil\u2013Universit\xE9-de-Sherbrooke (m\xE9tro de Montr\xE9al)",
+    squarevictoria: "Square-Victoria\u2013OACI (m\xE9tro de Montr\xE9al)",
+    udemontreal: "Universit\xE9-de-Montr\xE9al (m\xE9tro de Montr\xE9al)",
+    jeandrapeau: "Jean-Drapeau (m\xE9tro de Montr\xE9al)",
+    guy: "Guy-Concordia (m\xE9tro de Montr\xE9al)",
+    parc: "Parc (m\xE9tro de Montr\xE9al)",
+    acadie: "Acadie (m\xE9tro de Montr\xE9al)"
+  };
+  var titleFor = (s) => TITLE_OVERRIDES[s.id] || `${s.name} (m\xE9tro de Montr\xE9al)`;
+  var photos = /* @__PURE__ */ new Map();
+  var listeners = /* @__PURE__ */ new Set();
+  function getPhoto(id) {
+    return photos.get(id) || null;
+  }
+  function onPhotos(fn) {
+    listeners.add(fn);
+  }
+  function announce() {
+    listeners.forEach((fn) => {
+      try {
+        fn();
+      } catch (e) {
+      }
+    });
+  }
+  function readCache() {
+    try {
+      const raw = sessionStorage.getItem(CACHE_KEY);
+      if (!raw) return false;
+      const obj = JSON.parse(raw);
+      for (const k in obj) photos.set(k, obj[k]);
+      return photos.size > 0;
+    } catch (e) {
+      return false;
+    }
+  }
+  function writeCache() {
+    try {
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify(Object.fromEntries(photos)));
+    } catch (e) {
+    }
+  }
+  function chunk(arr, n) {
+    const out = [];
+    for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+    return out;
+  }
+  async function queryTitles(titles) {
+    const url = `${API}?${new URLSearchParams({
+      action: "query",
+      format: "json",
+      formatversion: "2",
+      origin: "*",
+      // required for anonymous CORS
+      prop: "pageimages",
+      piprop: "thumbnail",
+      pithumbsize: String(THUMB_WIDTH),
+      pilimit: "50",
+      redirects: "1",
+      titles: titles.join("|")
+    })}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("wiki " + res.status);
+    return res.json();
+  }
+  function buildAliasMap(data) {
+    const alias = /* @__PURE__ */ new Map();
+    const add = (from, to) => alias.set(from, to);
+    (data.query?.normalized || []).forEach((n) => add(n.from, n.to));
+    (data.query?.redirects || []).forEach((r) => add(r.from, r.to));
+    return alias;
+  }
+  function resolve(title, alias) {
+    let t = title, hops = 0;
+    while (alias.has(t) && hops++ < 4) t = alias.get(t);
+    return t;
+  }
+  async function loadPhotos() {
+    if (readCache()) {
+      announce();
+      return;
+    }
+    const wanted = STATIONS.map((s) => ({ id: s.id, title: titleFor(s) }));
+    for (const group of chunk(wanted, 50)) {
+      try {
+        const data = await queryTitles(group.map((g) => g.title));
+        const alias = buildAliasMap(data);
+        const byTitle = /* @__PURE__ */ new Map();
+        (data.query?.pages || []).forEach((p) => byTitle.set(p.title, p));
+        for (const { id, title } of group) {
+          const page = byTitle.get(resolve(title, alias));
+          if (page && page.thumbnail && page.thumbnail.source) {
+            photos.set(id, {
+              thumb: page.thumbnail.source,
+              page: "https://fr.wikipedia.org/wiki/" + encodeURIComponent(page.title.replace(/ /g, "_")),
+              title: page.title
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("Station photos unavailable:", e.message);
+      }
+    }
+    if (photos.size) writeCache();
+    announce();
+  }
+
   // js/panel.js
   var onSelect2 = () => {
   };
@@ -1017,10 +1145,22 @@ body[data-view="list"] .mapwrap{display:none}
     const nm = `<span class="nm2">${n}</span>`;
     return `<button class="nav-btn ${dir}" data-go="${id}" data-line="${line}" title="${n}">${dir === "prev" ? `<span class="ar">${arrow}</span>${nm}` : `${nm}<span class="ar">${arrow}</span>`}</button>`;
   }
+  function photoBlock(s) {
+    const ph = getPhoto(s.id);
+    if (!ph) return "";
+    return `<figure class="photo">
+    <img src="${ph.thumb}" alt="${escapeHtml(s.name)} station"
+         loading="lazy" decoding="async"
+         onerror="this.closest('.photo').remove()">
+    <figcaption>
+      <a href="${ph.page}" target="_blank" rel="noopener">Photo via Wikip\xE9dia</a>
+    </figcaption>
+  </figure>`;
+  }
   function renderPanel() {
     if (!state.selected) {
       panel.innerHTML = `<div class="p-empty">
-      <b>Nothing state.selected</b>
+      <b>Nothing selected</b>
       Pick a station to see how Matt rated it, then ride the line with the arrows.
       At an interchange you get a set of arrows per line, so you can change trains.
     </div>`;
@@ -1031,7 +1171,7 @@ body[data-view="list"] .mapwrap{display:none}
     const note = state.notes[s.id] || "";
     const nav = s.lines.map((l) => {
       const { prev, next } = neighbours(s.id, l);
-      return `<div class="nav-line${l === state.navLine ? " state.active" : ""}" style="--c:${LINES[l].hex}">
+      return `<div class="nav-line${l === state.navLine ? " active" : ""}" style="--c:${LINES[l].hex}">
       <div class="nav-head"><b>${LINES[l].num}</b> Ligne ${LINES[l].name}</div>
       <div class="nav-row">${navBtn(prev, l, "prev")}${navBtn(next, l, "next")}</div>
     </div>`;
@@ -1039,6 +1179,8 @@ body[data-view="list"] .mapwrap{display:none}
     panel.innerHTML = `
     <div class="p-eyebrow">${s.lines.length > 1 ? "Interchange \xB7 " : ""}${escapeHtml(s.borough)}</div>
     <h2 class="p-name">${escapeHtml(s.name)}</h2>
+
+    ${photoBlock(s)}
 
     <div class="score" style="--c:${TIERS[r].hex}">
       <div class="pips">
@@ -1090,7 +1232,7 @@ body[data-view="list"] .mapwrap{display:none}
   }
   function renderSheetHead() {
     if (!state.selected) {
-      shName.textContent = "Nothing state.selected";
+      shName.textContent = "Nothing selected";
       shScore.textContent = "";
       return;
     }
@@ -1303,6 +1445,9 @@ body[data-view="list"] .mapwrap{display:none}
   initPanel({ onSelect: select });
   initList({ onSelect: select });
   initControls({ refresh: refresh2 });
+  onPhotos(() => {
+    if (state.selected) renderPanel();
+  });
   (async () => {
     await loadNotes();
     buildMap();
@@ -1311,6 +1456,7 @@ body[data-view="list"] .mapwrap{display:none}
     renderPanel();
     renderList();
     syncReset();
+    loadPhotos();
   })();
 })();
 </script>
