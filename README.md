@@ -110,6 +110,21 @@ It degrades to nothing. If the API is unreachable, an article has no image, or
 an image 404s, the panel renders without a photo — no spinner, no broken-image
 icon, no reserved empty space.
 
+**Overriding a photo:** Wikipedia's lead image is often an entrance or a
+platform sign rather than the architecture being rated. Add the station id and
+a Commons file URL to `IMAGE_OVERRIDES` at the top of `js/photos.js`:
+
+```js
+const IMAGE_OVERRIDES = {
+  monk: 'https://upload.wikimedia.org/wikipedia/commons/c/ce/Monk_Station_Metro.jpg'
+};
+```
+
+Paste the plain "Original file" URL from Commons. Tracking parameters are
+stripped and the URL is rewritten to Wikimedia's `/thumb/` renderer at 900px,
+so you never serve a multi-megabyte original. Overrides beat both the API and
+any cached result, so a change shows up on the next reload.
+
 **Licensing:** Wikipedia photos are contributor-owned and mostly CC-licensed,
 which generally requires crediting the photographer, not just the source. The
 caption currently says "Photo via Wikipédia" and links to the article. That is
